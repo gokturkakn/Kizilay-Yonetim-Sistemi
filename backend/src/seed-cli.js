@@ -6,6 +6,6 @@ import { seedAll } from './seed.js';
 //   npm run seed:demo   → referans veri + sahte kişi/faaliyet/toplantı kayıtları (geliştirme)
 const withDemo = process.argv.includes('--demo') || process.env.KK_SEED_DEMO === '1';
 
-const counts = seedAll(getDb(), { withDemo });
+const counts = seedAll(await getDb(), { withDemo });
 console.log(withDemo ? 'Tohum veri hazır (demo dahil):' : 'Tohum veri hazır (yalnız referans veri):',
   JSON.stringify(counts));

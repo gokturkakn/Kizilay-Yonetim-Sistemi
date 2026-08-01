@@ -8,14 +8,36 @@ import {
   badRequest, conflict, notFound, listQuery, parseBoolFlag,
   requireFields, EMAIL_RE, validDate, toIntOrThrow,
 } from '../helpers.js';
+import { validStatus, statusFromIsActive, optionalDate, optionalText } from '../v2.js';
 
 const UNIT_TYPES = ['il_teskilati', 'ilce_teskilati', 'temsilcilik'];
 const PERSON_FIELDS = [
   'first_name', 'last_name', 'tc_no', 'birth_date', 'phone', 'email',
-  'profession', 'unit_type', 'province_id', 'district_id',
+  'profession', 'unit_type', 'province_id', 'district_id', 'status',
+  'start_date', 'end_date', 'notes',
 ];
-const SELECT_PERSON = `id, first_name, last_name, tc_no, birth_date, phone, email, profession,
-  unit_type, province_id, district_id, is_active, created_at, updated_at`;
+
+// K3 — tabloda artık `status` var; `is_active` v1 istemcisi için TÜRETİLEREK döndürülür.
+const SELECT_PERSON = `p.id, p.first_name, p.last_name, p.tc_no, p.birth_date, p.phone, p.email,
+  p.profession, p.unit_type, p.province_id, p.district_id, p.status,
+  CASE WHEN p.status = 'aktif' THEN 1 ELSE 0 END AS is_active,
+  p.start_date, p.end_date, p.notes,
+  pr.region_id, r.name AS region_name, pr.name AS province_name, d.name AS district_name,
+  (SELECT COUNT(*) FROM attachments a WHERE a.entity = 'persons' AND a.entity_id = p.id) AS attachment_count,
+  p.created_at, p.updated_at`;
+const FROM_PERSON = `persons p
+  JOIN provinces pr ON pr.id = p.province_id
+  LEFT JOIN regions r ON r.id = pr.region_id
+  LEFT JOIN districts d ON d.id = p.district_id`;
+
+function resolveStatus(body, currentStatus) {
+  if (body.status !== undefined && body.status !== null && body.status !== '') {
+    return validStatus(body.status);
+  }
+  const flag = parseBoolFlag(body.is_active);
+  if (flag !== undefined) return statusFromIsActive(flag);
+  return currentStatus ?? 'aktif';
+}
 
 export function validatePersonPayload(db, body, opts = {}) {
   const { existingId = null } = opts;
@@ -67,9 +89,14 @@ export function validatePersonPayload(db, body, opts = {}) {
     unit_type: body.unit_type,
     province_id: provinceId,
     district_id: districtId,
-    // Formdaki aktif/pasif tiki. Gönderilmezse kayıt aktif kabul edilir (yeni kayıt)
-    // veya mevcut değer korunur (güncelleme).
-    is_active: parseBoolFlag(body.is_active) ?? (opts.currentActive ?? 1),
+    // K3 üç durumlu statü. Öncelik sırası:
+    //   1) açıkça gönderilen `status`
+    //   2) v1 istemcisinin gönderdiği `is_active` tiki (true→aktif, false→pasif)
+    //   3) mevcut değer (güncelleme) / 'aktif' (yeni kayıt)
+    status: resolveStatus(body, opts.currentStatus),
+    start_date: optionalDate(body.start_date, 'start_date'),
+    end_date: optionalDate(body.end_date, 'end_date'),
+    notes: optionalText(body.notes),
   };
 }
 
@@ -77,31 +104,35 @@ export default function personRoutes(db) {
   const r = Router();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-  const getPerson = (id) => db.prepare(`SELECT ${SELECT_PERSON} FROM persons WHERE id = ?`).get(id);
+  const getPerson = (id) => db.prepare(`SELECT ${SELECT_PERSON} FROM ${FROM_PERSON} WHERE p.id = ?`).get(id);
 
   r.get('/persons', (req, res, next) => {
     try {
       const where = [];
       const params = [];
       const { province_id, district_id, unit_type, q } = req.query;
-      if (province_id) { where.push('province_id = ?'); params.push(toIntOrThrow(province_id, 'province_id')); }
-      if (district_id) { where.push('district_id = ?'); params.push(toIntOrThrow(district_id, 'district_id')); }
+      if (province_id) { where.push('p.province_id = ?'); params.push(toIntOrThrow(province_id, 'province_id')); }
+      if (district_id) { where.push('p.district_id = ?'); params.push(toIntOrThrow(district_id, 'district_id')); }
+      if (req.query.region_id) { where.push('pr.region_id = ?'); params.push(toIntOrThrow(req.query.region_id, 'region_id')); }
       if (unit_type) {
         if (!UNIT_TYPES.includes(unit_type)) throw badRequest('unit_type filtresi geçersiz');
-        where.push('unit_type = ?'); params.push(unit_type);
+        where.push('p.unit_type = ?'); params.push(unit_type);
       }
+      if (req.query.status) { where.push('p.status = ?'); params.push(validStatus(req.query.status)); }
+      // v1 uyumu: is_active=1 → 'aktif', is_active=0 → aktif OLMAYAN (pasif + teşkilat yok).
       const active = parseBoolFlag(req.query.is_active);
-      if (active !== undefined) { where.push('is_active = ?'); params.push(active); }
+      if (active === 1) where.push("p.status = 'aktif'");
+      if (active === 0) where.push("p.status <> 'aktif'");
       if (q) {
-        where.push("(first_name LIKE ? OR last_name LIKE ? OR (first_name || ' ' || last_name) LIKE ?)");
+        where.push("(p.first_name LIKE ? OR p.last_name LIKE ? OR (p.first_name || ' ' || p.last_name) LIKE ?)");
         const like = `%${q}%`;
         params.push(like, like, like);
       }
       res.json(listQuery(db, {
         select: SELECT_PERSON,
-        from: 'persons',
+        from: FROM_PERSON,
         where, params,
-        orderBy: 'last_name, first_name',
+        orderBy: 'p.last_name, p.first_name',
         query: req.query,
       }));
     } catch (e) { next(e); }
@@ -120,9 +151,9 @@ export default function personRoutes(db) {
       const p = validatePersonPayload(db, req.body || {});
       const { lastInsertRowid } = db.prepare(`
         INSERT INTO persons (first_name, last_name, tc_no, birth_date, phone, email, profession,
-                             unit_type, province_id, district_id, is_active)
+                             unit_type, province_id, district_id, status, start_date, end_date, notes)
         VALUES (@first_name, @last_name, @tc_no, @birth_date, @phone, @email, @profession,
-                @unit_type, @province_id, @district_id, @is_active)`).run(p);
+                @unit_type, @province_id, @district_id, @status, @start_date, @end_date, @notes)`).run(p);
       const row = getPerson(lastInsertRowid);
       auditLog(db, { entity: 'persons', entityId: row.id, action: 'create', changedBy: req.user.id, changes: p });
       res.status(201).json(row);
@@ -135,13 +166,14 @@ export default function personRoutes(db) {
       if (!before) throw notFound('Kişi bulunamadı');
       const p = validatePersonPayload(db, req.body || {}, {
         existingId: before.id,
-        currentActive: before.is_active,
+        currentStatus: before.status,
       });
       db.prepare(`
         UPDATE persons SET first_name=@first_name, last_name=@last_name, tc_no=@tc_no,
           birth_date=@birth_date, phone=@phone, email=@email, profession=@profession,
           unit_type=@unit_type, province_id=@province_id, district_id=@district_id,
-          is_active=@is_active, updated_at=datetime('now')
+          status=@status, start_date=@start_date, end_date=@end_date, notes=@notes,
+          updated_at=datetime('now')
         WHERE id=@id`).run({ ...p, id: before.id });
       const after = getPerson(before.id);
       auditLog(db, {
@@ -158,11 +190,28 @@ export default function personRoutes(db) {
       if (!before) throw notFound('Kişi bulunamadı');
       const flag = parseBoolFlag((req.body || {}).is_active);
       if (flag === undefined) throw badRequest("'is_active' alanı zorunludur");
-      db.prepare("UPDATE persons SET is_active = ?, updated_at = datetime('now') WHERE id = ?").run(flag, before.id);
+      const status = statusFromIsActive(flag);
+      db.prepare("UPDATE persons SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, before.id);
       const after = getPerson(before.id);
       auditLog(db, {
         entity: 'persons', entityId: before.id, action: 'active_toggle', changedBy: req.user.id,
-        changes: { is_active: { old: before.is_active, new: flag } },
+        changes: { status: { old: before.status, new: status } },
+      });
+      res.json(after);
+    } catch (e) { next(e); }
+  });
+
+  // v2 — üç durumlu statü ucu. 'teskilat_yok' yalnız buradan atanabilir.
+  r.patch('/persons/:id/status', requireRole('genel_merkez'), (req, res, next) => {
+    try {
+      const before = getPerson(req.params.id);
+      if (!before) throw notFound('Kişi bulunamadı');
+      const status = validStatus((req.body || {}).status);
+      db.prepare("UPDATE persons SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, before.id);
+      const after = getPerson(before.id);
+      auditLog(db, {
+        entity: 'persons', entityId: before.id, action: 'status_change', changedBy: req.user.id,
+        changes: { status: { old: before.status, new: status } },
       });
       res.json(after);
     } catch (e) { next(e); }
@@ -244,9 +293,9 @@ export default function personRoutes(db) {
           });
           const { lastInsertRowid } = db.prepare(`
             INSERT INTO persons (first_name, last_name, tc_no, birth_date, phone, email, profession,
-                                 unit_type, province_id, district_id, is_active)
+                                 unit_type, province_id, district_id, status, start_date, end_date, notes)
             VALUES (@first_name, @last_name, @tc_no, @birth_date, @phone, @email, @profession,
-                    @unit_type, @province_id, @district_id, 1)`).run(payload);
+                    @unit_type, @province_id, @district_id, 'aktif', @start_date, @end_date, @notes)`).run(payload);
           auditLog(db, {
             entity: 'persons', entityId: Number(lastInsertRowid), action: 'create',
             changedBy: req.user.id, changes: { ...payload, source: 'import' },

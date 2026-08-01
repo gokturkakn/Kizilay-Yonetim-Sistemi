@@ -3,6 +3,8 @@ import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import { DATA_DIR } from './config.js';
 import { completeTcNo } from './tc.js';
+import { seedV2 } from './seed-v2.js';
+import { seedV2Demo } from './seed-v2-demo.js';
 
 const COMMISSIONS = [
   'Eğitim Komisyonu',
@@ -68,7 +70,7 @@ export function seedAll(db, { withDemo = false } = {}) {
 
   // --- Kullanıcılar (e-posta üzerinden idempotent) ---
   const userInsert = db.prepare(
-    'INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)'
+    "INSERT INTO users (name, email, password_hash, role, updated_at) VALUES (?, ?, ?, ?, datetime('now'))"
   );
   const userByEmail = db.prepare('SELECT id FROM users WHERE email = ?');
   for (const u of SEED_USERS) {
@@ -110,6 +112,10 @@ export function seedAll(db, { withDemo = false } = {}) {
     if (!taskByName.get(name)) insTask.run(name);
   }
 
+  // --- v2 referans verisi: bölgeler, tanımlar, teşkilat birimleri, takvim, içerik ---
+  // (il/ilçe ve kurul/komisyon tohumlandıktan SONRA çalışmalıdır — onlardan türetir.)
+  const v2Counts = seedV2(db);
+
   // --- Demo verisi: yalnızca açıkça istendiğinde ve persons tablosu boşsa ---
   const personCount = db.prepare('SELECT COUNT(*) AS c FROM persons').get().c;
   if (withDemo && personCount === 0) {
@@ -117,7 +123,7 @@ export function seedAll(db, { withDemo = false } = {}) {
     const distByName = db.prepare('SELECT id FROM districts WHERE province_id = ? AND name = ?');
     const insPerson = db.prepare(`
       INSERT INTO persons (first_name, last_name, tc_no, birth_date, phone, email, profession,
-                           unit_type, province_id, district_id, is_active)
+                           unit_type, province_id, district_id, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
     const personIds = [];
@@ -128,7 +134,7 @@ export function seedAll(db, { withDemo = false } = {}) {
         const { lastInsertRowid } = insPerson.run(
           p.first_name, p.last_name, fakeTc(i), p.birth_date, p.phone, p.email,
           p.profession, p.unit_type, prov.id, dist ? dist.id : null,
-          p.is_active === 0 ? 0 : 1
+          p.is_active === 0 ? 'pasif' : 'aktif'
         );
         personIds.push(Number(lastInsertRowid));
       });
@@ -178,8 +184,12 @@ export function seedAll(db, { withDemo = false } = {}) {
       insAssign.run(personIds[1], 'Çankaya kan bağışı standı sorumluluğu', null, '2026-07-03', 'tamamlandi', adminId);
       insAssign.run(personIds[4], 'İzmir sağlık taraması saha ekibi kurulumu', 'Gönüllü sağlık personeli listesinin çıkarılması', '2026-07-22', 'atandi', adminId);
     })();
+
+    // v2 modüllerinin demo kayıtları (görev, eğitim, etkinlik, lojistik, görevlendirme)
+    seedV2Demo(db, { adminId, sahaId, personIds });
   }
 
+  Object.assign(result, v2Counts);
   result.users = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   result.provinces = db.prepare('SELECT COUNT(*) AS c FROM provinces').get().c;
   result.districts = db.prepare('SELECT COUNT(*) AS c FROM districts').get().c;

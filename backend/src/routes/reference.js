@@ -6,13 +6,24 @@ import { listQuery, notFound, requireFields } from '../helpers.js';
 export default function referenceRoutes(db) {
   const r = Router();
 
-  r.get('/provinces', (req, res) => {
-    res.json(listQuery(db, {
-      select: 'id, code, name',
-      from: 'provinces',
-      orderBy: 'code',
-      query: req.query,
-    }));
+  // v2: `region_id` alanı eklendi ve filtre olarak kabul ediliyor (alan ekleme kırıcı değildir).
+  r.get('/provinces', (req, res, next) => {
+    try {
+      const where = [];
+      const params = [];
+      if (req.query.region_id) {
+        where.push('region_id = ?');
+        params.push(Number(req.query.region_id));
+      }
+      res.json(listQuery(db, {
+        select: 'id, code, name, region_id',
+        from: 'provinces',
+        where,
+        params,
+        orderBy: 'code',
+        query: req.query,
+      }));
+    } catch (e) { next(e); }
   });
 
   r.get('/provinces/:id/districts', (req, res, next) => {

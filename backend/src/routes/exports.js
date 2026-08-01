@@ -43,17 +43,22 @@ export default function exportRoutes(db) {
         if (!UNIT_TYPES.includes(unit_type)) throw badRequest('unit_type filtresi geçersiz');
         where.push('p.unit_type = ?'); params.push(unit_type);
       }
+      // v1 uyumu: is_active=1 → 'aktif'; is_active=0 → aktif olmayan (pasif + teşkilat yok).
       const active = parseBoolFlag(req.query.is_active);
-      if (active !== undefined) { where.push('p.is_active = ?'); params.push(active); }
+      if (active === 1) where.push("p.status = 'aktif'");
+      if (active === 0) where.push("p.status <> 'aktif'");
+      if (req.query.status) { where.push('p.status = ?'); params.push(String(req.query.status)); }
+      if (req.query.region_id) { where.push('pr.region_id = ?'); params.push(toIntOrThrow(req.query.region_id, 'region_id')); }
       if (q) {
         where.push("(p.first_name LIKE ? OR p.last_name LIKE ? OR (p.first_name || ' ' || p.last_name) LIKE ?)");
         const like = `%${q}%`;
         params.push(like, like, like);
       }
       const rows = db.prepare(`
-        SELECT p.*, pr.name AS province_name, d.name AS district_name
+        SELECT p.*, pr.name AS province_name, d.name AS district_name, rg.name AS region_name
         FROM persons p
         JOIN provinces pr ON pr.id = p.province_id
+        LEFT JOIN regions rg ON rg.id = pr.region_id
         LEFT JOIN districts d ON d.id = p.district_id
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY p.last_name, p.first_name`).all(...params);
@@ -67,6 +72,7 @@ export default function exportRoutes(db) {
         { header: 'E-posta', key: 'email', width: 30 },
         { header: 'Meslek', key: 'profession' },
         { header: 'Birim Türü', key: 'unit_type_tr' },
+        { header: 'Bölge', key: 'region_name' },
         { header: 'İl', key: 'province_name' },
         { header: 'İlçe', key: 'district_name' },
         { header: 'Durum', key: 'status_tr' },
@@ -74,7 +80,7 @@ export default function exportRoutes(db) {
       ], rows.map((p) => ({
         ...p,
         unit_type_tr: UNIT_TYPE_TR[p.unit_type] || p.unit_type,
-        status_tr: p.is_active ? 'Aktif' : 'Pasif',
+        status_tr: { aktif: 'Aktif', pasif: 'Pasif', teskilat_yok: 'Teşkilat Yok' }[p.status] || p.status,
       })));
     } catch (e) { next(e); }
   });

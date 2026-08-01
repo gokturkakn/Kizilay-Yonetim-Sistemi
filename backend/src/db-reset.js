@@ -16,6 +16,14 @@ import { DB_PATH } from './config.js';
 
 const TRANSACTIONAL_TABLES = [
   'audit_logs',
+  'attachments',
+  'stock_movements',
+  'shipments',
+  'material_requests',
+  'events',
+  'trainings',
+  'tasks',
+  'org_assignments',
   'assignments',
   'meetings',
   'field_activities',
@@ -23,7 +31,7 @@ const TRANSACTIONAL_TABLES = [
   'persons',
 ];
 
-const db = getDb();
+const db = await getDb();
 
 const counts = Object.fromEntries(
   TRANSACTIONAL_TABLES.map((t) => [t, db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c])
@@ -34,7 +42,7 @@ console.log(`Veritabanı: ${DB_PATH}`);
 console.log('Silinecek kayıtlar:');
 for (const [table, c] of Object.entries(counts)) console.log(`  ${table.padEnd(18)} ${c}`);
 console.log(`  ${'TOPLAM'.padEnd(18)} ${toDelete}`);
-console.log('Korunacak: iller, ilçeler, kurul/komisyonlar, görev alanları, kullanıcılar.');
+console.log('Korunacak: iller, ilçeler, bölgeler, tanımlar, teşkilat birimleri, takvim, içerik, kullanıcılar.');
 
 if (toDelete === 0) {
   console.log('\nSilinecek kayıt yok. Veritabanı zaten temiz.');
@@ -70,5 +78,11 @@ const remaining = {
   gorev_alanlari: db.prepare('SELECT COUNT(*) AS c FROM task_areas').get().c,
   kullanicilar: db.prepare('SELECT COUNT(*) AS c FROM users').get().c,
   kisiler: db.prepare('SELECT COUNT(*) AS c FROM persons').get().c,
+  bolgeler: db.prepare('SELECT COUNT(*) AS c FROM regions').get().c,
+  tanim_kalemleri: db.prepare('SELECT COUNT(*) AS c FROM lookup_items').get().c,
+  teskilat_birimleri: db.prepare('SELECT COUNT(*) AS c FROM org_units').get().c,
+  takvim: db.prepare('SELECT COUNT(*) AS c FROM calendar_events').get().c,
 };
+// Teşkilat birimleri görevlendirmesiz kaldığı için boşluk durumuna geri döner.
+db.prepare("UPDATE org_units SET status = 'teskilat_yok' WHERE type IN ('bolge_temsilciligi','il_baskanligi','ilce_baskanligi','temsilcilik')").run();
 console.log(`\n${toDelete} kayıt silindi. Kalan referans veri:`, JSON.stringify(remaining));

@@ -49,8 +49,10 @@ API adresi `app/lib/core/config.dart` içinde; farklı sunucu için
 | Saha | saha@kizilay.org.tr | Saha!2026 |
 
 ## Belgeler
-- [docs/SPEC.md](docs/SPEC.md) — ürün kapsamı
-- [docs/API.md](docs/API.md) — REST sözleşmesi
+- [docs/SPEC.md](docs/SPEC.md) — v1 ürün kapsamı
+- [docs/SPEC-V2.md](docs/SPEC-V2.md) — **v2 kapsamı ve mimari kararlar (K1–K6)**
+- [docs/API.md](docs/API.md) — v1 REST sözleşmesi (tüm uçları çalışmaya devam eder)
+- [docs/API-V2.md](docs/API-V2.md) — **v2 REST sözleşmesi (bağlayıcı; çelişkide bu geçerlidir)**
 - [docs/UX.md](docs/UX.md) — ekran ve tasarım rehberi
 - [docs/BACKLOG.md](docs/BACKLOG.md) — sprint durumu
 - [evidence/](evidence) — QA kanıt raporları

@@ -17,9 +17,10 @@ async function seedInto(dbFile, withDemo) {
   process.env.KK_DB_PATH = path.join(dir, dbFile);
   const { getDb } = await import(`../src/db.js?v=${dbFile}`);
   const { seedAll } = await import(`../src/seed.js?v=${dbFile}`);
-  const db = getDb();
+  const db = await getDb();
   const counts = seedAll(db, { withDemo });
-  const transactional = ['persons', 'memberships', 'field_activities', 'meetings', 'assignments']
+  const transactional = ['persons', 'memberships', 'field_activities', 'meetings', 'assignments',
+    'tasks', 'trainings', 'events', 'org_assignments', 'material_requests', 'shipments', 'attachments']
     .map((t) => db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c)
     .reduce((a, b) => a + b, 0);
   return { counts, transactional };
@@ -39,6 +40,14 @@ const demo = await seedInto('demo.db', true);
 check('referans veri yine tam', demo.counts.provinces === 81 && demo.counts.districts === 973);
 check('demo kişiler yüklenir', demo.counts.persons === 9);
 check('demo işlem kayıtları yüklenir', demo.transactional > 9);
+
+console.log('\n[3] v2 referans verisi üretimde de yüklenir (demo değil)');
+check('7 bölge + 81 il eşlemesi', prod.counts.regions === 7 && prod.counts.provinces_mapped === 81);
+check('14 tanım kategorisi / 138 kalem',
+  prod.counts.lookup_categories === 14 && prod.counts.lookup_items === 138);
+check('1068 teşkilat birimi', prod.counts.org_units === 1068);
+check('68 takvim kaydı + 13 içerik bloğu',
+  prod.counts.calendar_events === 68 && prod.counts.content_blocks === 13);
 
 rmSync(dir, { recursive: true, force: true });
 console.log(`\n=== Tohum modu testi: ${pass} başarılı, ${fail} başarısız ===`);

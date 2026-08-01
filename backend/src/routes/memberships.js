@@ -6,7 +6,8 @@ import {
 } from '../helpers.js';
 
 const PERSON_SELECT = `p.id, p.first_name, p.last_name, p.tc_no, p.birth_date, p.phone, p.email,
-  p.profession, p.unit_type, p.province_id, p.district_id, p.is_active AS person_is_active`;
+  p.profession, p.unit_type, p.province_id, p.district_id, p.status AS person_status,
+  CASE WHEN p.status = 'aktif' THEN 1 ELSE 0 END AS person_is_active`;
 
 export default function membershipRoutes(db) {
   const r = Router();
@@ -45,6 +46,7 @@ export default function membershipRoutes(db) {
           unit_type: row.unit_type,
           province_id: row.province_id,
           district_id: row.district_id,
+          status: row.person_status,
           is_active: row.person_is_active,
         },
       }));

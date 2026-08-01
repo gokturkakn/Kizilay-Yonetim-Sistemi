@@ -14,9 +14,16 @@ export default function authRoutes(db) {
       if (!user || !bcrypt.compareSync(String(password), user.password_hash)) {
         throw new ApiError(401, 'INVALID_CREDENTIALS', 'E-posta veya şifre hatalı');
       }
+      // v2: pasifleştirilmiş hesap giriş yapamaz (Kullanıcı Yönetimi).
+      if (user.is_active === 0) {
+        throw new ApiError(401, 'ACCOUNT_DISABLED', 'Bu hesap pasif durumda; yöneticinize başvurun');
+      }
       res.json({
         token: signToken(user),
-        user: { id: user.id, name: user.name, email: user.email, role: user.role },
+        user: {
+          id: user.id, name: user.name, email: user.email, role: user.role,
+          region_id: user.region_id ?? null, province_id: user.province_id ?? null,
+        },
       });
     } catch (e) {
       next(e);
