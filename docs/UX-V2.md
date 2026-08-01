@@ -737,7 +737,7 @@ Her ekran için: **Amaç · AppBar · Bileşenler · Boş durum · Birincil aksi
 
 - **Amaç:** Kurulun görevlilerini yönetmek. `GET /org-units?type=koordinasyon_kurulu` (tek birim) + `GET /org-units/:id/assignments`.
 - **AppBar:** `Koordinasyon Kurulu`.
-- **Bileşenler:** InfoBlockHeader (`teskilat.koordinasyon_kurulu`) → filtre çipleri `Tümü / Aktif / Pasif` (kurul birim değil kişi listesidir; `Teşkilat Yok` çipi **yok**) → görevli kartları. Kart: v1 §4.1 kişi kartı + fotoğraf varsa avatar yerine fotoğraf + ad altında **görev unvanı** `bodySmall`/`kTextSecondary` + ikinci satırda görev tarihleri `{dd.MM.yyyy} – {dd.MM.yyyy}` (bitiş boşsa `{dd.MM.yyyy} – devam ediyor`).
+- **Bileşenler:** InfoBlockHeader (`teskilatlanma.koordinasyon_kurulu`) → filtre çipleri `Tümü / Aktif / Pasif` (kurul birim değil kişi listesidir; `Teşkilat Yok` çipi **yok**) → görevli kartları. Kart: v1 §4.1 kişi kartı + fotoğraf varsa avatar yerine fotoğraf + ad altında **görev unvanı** `bodySmall`/`kTextSecondary` + ikinci satırda görev tarihleri `{dd.MM.yyyy} – {dd.MM.yyyy}` (bitiş boşsa `{dd.MM.yyyy} – devam ediyor`).
 - Kart taşma menüsü (`⋮`): `Düzenle` · `Görevi Sonlandır` · `Görevden Çıkar`.
   - `Görevi Sonlandır` → tarih seçici dialog: başlık `Görevi sonlandır`, gövde `Görev bitiş tarihini seçin.`, aksiyon `Vazgeç` / `Kaydet`.
   - `Görevden Çıkar` → onay: `Görevden çıkar` / `Bu kişi listeden kaldırılacak. Devam edilsin mi?` / `Vazgeç` · `Çıkar` (kırmızı).
@@ -748,7 +748,7 @@ Her ekran için: **Amaç · AppBar · Bileşenler · Boş durum · Birincil aksi
 
 - **Amaç:** 7 coğrafi bölge ve temsilcileri. `GET /regions` + `GET /org-units?type=bolge_temsilciligi`.
 - **AppBar:** `Bölge Temsilcileri`.
-- **Bileşenler:** InfoBlockHeader (`teskilat.bolge_temsilcileri`) → filtre çipleri **4'lü** (`Tümü / Aktif / Pasif / Teşkilat Yok`, varsayılan `Tümü`) → 7 bölge kartı. Kart: bölge adı `titleMedium`, altında `{n} il` `bodySmall`, sağda `StatusBadge`; temsilci varsa 3. satırda `Icons.person_outline` + temsilcinin adı, yoksa `Henüz görevli atanmamış.` (§3.3a).
+- **Bileşenler:** InfoBlockHeader (`teskilatlanma.bolge_temsilcileri`) → filtre çipleri **4'lü** (`Tümü / Aktif / Pasif / Teşkilat Yok`, varsayılan `Tümü`) → 7 bölge kartı. Kart: bölge adı `titleMedium`, altında `{n} il` `bodySmall`, sağda `StatusBadge`; temsilci varsa 3. satırda `Icons.person_outline` + temsilcinin adı, yoksa `Henüz görevli atanmamış.` (§3.3a).
 - **İki panelli (`>= 840`):** solda 7 bölge listesi, sağda seçili bölgenin detayı (E-27).
 - **Boş durum:** olmaz (7 bölge tohum veridir). Filtre sonucu boşsa: `Seçilen duruma uyan bölge bulunmuyor.`
 - **Birincil aksiyon:** kart dokunuşu → E-27 Birim Detayı.
@@ -757,7 +757,7 @@ Her ekran için: **Amaç · AppBar · Bileşenler · Boş durum · Birincil aksi
 
 - **Amaç:** Komisyon listesi ve üyelikleri. `GET /org-units?type=komisyon`.
 - **AppBar:** `Komisyonlar`.
-- **Bileşenler:** InfoBlockHeader (`teskilat.komisyonlar`) → 4'lü filtre çipleri → komisyon kartları (ad `titleMedium`, `{n} üye` `bodySmall`, `StatusBadge`, `chevron_right`).
+- **Bileşenler:** InfoBlockHeader (`teskilatlanma.komisyonlar`) → 4'lü filtre çipleri → komisyon kartları (ad `titleMedium`, `{n} üye` `bodySmall`, `StatusBadge`, `chevron_right`).
 - **Boş durum:** `Henüz komisyon tanımlanmamış.` (v1 §3.3 ile aynı metin).
 - **Birincil aksiyon:** kart → E-27. FAB `Yeni Komisyon` (yalnız `genel_merkez`) → E-27'nin form modu (birim adı + durum).
 
@@ -766,7 +766,7 @@ Her ekran için: **Amaç · AppBar · Bileşenler · Boş durum · Birincil aksi
 - **Amaç:** 81 il başkanlığının **teşkilatlanma durumunu** görmek — v2'nin en çok bakılan listesi. `GET /org-units?type=il_baskanligi&region_id=&status=&q=`.
 - **AppBar:** `İl Kadın Başkanlıkları`; sağda `Icons.filter_list` (`tooltip: 'Filtrele'`).
 - **Bileşenler:**
-  1. InfoBlockHeader (`teskilat.il_baskanliklari`).
+  1. InfoBlockHeader (`teskilatlanma.il_baskanliklari`).
   2. Arama alanı, ipucu `İl ara...` (Türkçe harf duyarsız, v1 §4.4).
   3. `Bölge` açılır filtresi (`Tümü` + 7 bölge).
   4. 4'lü durum çipleri, varsayılan **`Tümü`**.
@@ -780,7 +780,7 @@ Her ekran için: **Amaç · AppBar · Bileşenler · Boş durum · Birincil aksi
 
 - **Amaç:** Seçili ilin ilçe başkanlıkları. `GET /org-units?type=ilce_baskanligi&province_id=`.
 - **AppBar:** il seçilmeden `İlçe Kadın Başkanlıkları`; il seçilince `{İl} İlçe Başkanlıkları`.
-- **Bileşenler:** InfoBlockHeader (`teskilat.ilce_baskanliklari`) → **il seçici** (zorunlu ilk adım; R5 gereği aranabilir seçici; seçilene kadar liste yerine yönlendirme: `Icons.location_city_outlined` 48 px + `İlçe başkanlıklarını görmek için önce bir il seçin.` + `İl Seç` `FilledButton`) → il seçilince: arama (`İlçe ara...`) + 4'lü durum çipleri (varsayılan `Tümü`) + özet şerit + ilçe listesi.
+- **Bileşenler:** InfoBlockHeader (`teskilatlanma.ilce_baskanliklari`) → **il seçici** (zorunlu ilk adım; R5 gereği aranabilir seçici; seçilene kadar liste yerine yönlendirme: `Icons.location_city_outlined` 48 px + `İlçe başkanlıklarını görmek için önce bir il seçin.` + `İl Seç` `FilledButton`) → il seçilince: arama (`İlçe ara...`) + 4'lü durum çipleri (varsayılan `Tümü`) + özet şerit + ilçe listesi.
 - Seçilen il AppBar altında kaldırılabilir bir `Chip` olarak durur (`Icons.close` ile temizlenir).
 - **Boş durum:** `Bu ilde ilçe başkanlığı kaydı bulunmuyor.`
 - **Birincil aksiyonlar:** satır → E-27; `Görevli Ata`.
@@ -789,7 +789,7 @@ Her ekran için: **Amaç · AppBar · Bileşenler · Boş durum · Birincil aksi
 
 - **Amaç:** İl/ilçe temsilcilikleri. `GET /org-units?type=temsilcilik&region_id=&province_id=&status=`.
 - **AppBar:** `Temsilcilikler`.
-- **Bileşenler:** InfoBlockHeader (`teskilat.temsilcilikler`) → arama (`Temsilcilik ara...`) → `Bölge` + `İl` açılır filtreleri (kademeli, R1) → 4'lü durum çipleri (varsayılan `Tümü`) → liste (ad `titleMedium`, `{İl} / {İlçe}` veya `{İl}` `bodySmall`, `StatusBadge`).
+- **Bileşenler:** InfoBlockHeader (`teskilatlanma.temsilcilikler`) → arama (`Temsilcilik ara...`) → `Bölge` + `İl` açılır filtreleri (kademeli, R1) → 4'lü durum çipleri (varsayılan `Tümü`) → liste (ad `titleMedium`, `{İl} / {İlçe}` veya `{İl}` `bodySmall`, `StatusBadge`).
 - **Boş durum:** `Kayıtlı temsilcilik bulunmuyor.`
 - **Birincil aksiyon:** FAB `Yeni Temsilcilik` (yalnız `genel_merkez`) → birim formu (Ad · Bölge · İl · İlçe (isteğe bağlı) · Durum · Açıklama).
 
@@ -1286,10 +1286,12 @@ Kategori adları API'den (`GET /lookup-categories` → `name`) gelir; **ekranda 
 #### E-66 · Yetkilendirme — `AuthorizationScreen`
 
 - **AppBar:** `Yetkilendirme`.
-- **Bileşenler:** 4 rol kartı (`Genel Merkez`, `Bölge Sorumlusu`, `İl Sorumlusu`, `Saha`). Her kart: rol adı `titleMedium` + `{n} kullanıcı` + `chevron_right`. Dokununca yetki matrisi: modül satırları × 4 sütun (`Görüntüle` · `Ekle` · `Düzenle` · `Sil`) — `Checkbox`'lar.
-- `Genel Merkez` satırları **tümü işaretli ve devre dışı**, altında `Genel merkez rolünün yetkileri değiştirilemez.`
-- Kaydetme: üstte `Kaydet` `FilledButton`. Başarı: `Yetkiler güncellendi.`
-- **Boş durum:** yok.
+- **Bileşenler:** 2 rol kartı (`Genel Merkez`, `Saha`). Her kart: rol adı `titleMedium` + `{n} kullanıcı` + `chevron_right`. Dokununca **salt okunur** yetki matrisi: modül satırları × 4 sütun (`Görüntüle` · `Ekle` · `Düzenle` · `Sil`) — işaretli/işaretsiz `Icons.check` ve `Icons.remove`.
+- **Matris bu sürümde düzenlenemez.** Yetkiler sunucuda role gömülüdür (API-V2 §1.6); değiştirilebilirmiş gibi `Checkbox` gösterilmez. Ekranın üstünde `kWarningContainer` bilgi kartı, metin **aynen**:
+  `Rol yetkileri bu sürümde sabittir ve yalnızca görüntülenebilir.`
+- `Kaydet` butonu **yoktur**.
+- Ekranın altında ayrı bölüm `Kapsam Tanımlı Kullanıcılar`: `region_id` veya `province_id` dolu kullanıcıların listesi + altında `Kapsam bilgisi raporlama içindir; veri erişimini kısıtlamaz.` Satır dokunuşu → E-62.
+- **Boş durum:** kapsam bölümü boşsa `Kapsam tanımlı kullanıcı bulunmuyor.`
 
 #### E-67 · Bildirimler — `NotificationSettingsScreen`
 
@@ -1303,7 +1305,7 @@ Kategori adları API'den (`GET /lookup-categories` → `name`) gelir; **ekranda 
 - **AppBar:** `Sistem Ayarları`.
 - **Bileşenler:** bölümler hâlinde salt bilgi + birkaç ayar:
   - `Kurum Bilgileri`: `Kurum Adı` (text), `Logo` (tek görsel eki).
-  - `Dosya Ayarları`: `En Büyük Dosya Boyutu (MB)` (number, varsayılan 10), `İzin Verilen Dosya Türleri` (salt okunur liste, §7.2).
+  - `Dosya Ayarları` — **tamamı salt okunur** (sunucuda sabittir, API-V2 §9): `En Büyük Dosya Boyutu` → `10 MB`, `İzin Verilen Dosya Türleri` → `JPG, PNG, WEBP, GIF, PDF, DOCX, XLSX`. Bölümün altında `bodySmall`/`kTextSecondary`: `Dosya kısıtları sunucu tarafından belirlenir.` Düzenlenemeyen alan **giriş kutusu olarak gösterilmez** (etiket + değer satırı).
   - `Sistem Bilgisi` (salt okunur): `Sürüm`, `Veritabanı Durumu`, `Son Yedekleme` (`GET /health`). Yedekleme kaydı yoksa değer `Kayıt yok`.
 - **Başarı:** `Ayarlar kaydedildi.`
 
@@ -1610,7 +1612,6 @@ Rol farkları **derleme zamanında gizlenir** — buton devre dışı bırakmak 
 | Toplantı Yeri | `Toplantı yerini girin.` / `Toplantı yeri en az 3 karakter olmalıdır.` |
 | Platform | `Platform seçin.` |
 | Platform Adı | `Platform adını girin.` |
-| Bağlantı Adresi | `Geçerli bir bağlantı adresi girin.` |
 | Görev Türü | `Görev türü seçin.` |
 | Alt Görev | `Alt görev seçin.` |
 | Eğitim Kategorisi | `Eğitim kategorisi seçin.` |
@@ -1720,9 +1721,12 @@ Rol farkları **derleme zamanında gizlenir** — buton devre dışı bırakmak 
 | ek.indirilemedi | `Dosya indirilemedi. Tekrar deneyin.` |
 | ek.hataAg | `Dosya yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.` |
 | ek.hataSunucu | `Dosya yüklenemedi. Lütfen tekrar deneyin.` |
-| ek.hataBoyut | `Dosya boyutu en fazla {n} MB olabilir.` |
-| ek.hataFotoTur | `Yalnızca JPG, PNG, HEIC ve WEBP dosyaları yükleyebilirsiniz.` |
-| ek.hataDokTur | `Yalnızca PDF, Word, Excel ve PowerPoint dosyaları yükleyebilirsiniz.` |
+| ek.hataBoyut | `Dosya boyutu en fazla 10 MB olabilir.` |
+| ek.hataFotoTur | `Yalnızca JPG, PNG, WEBP ve GIF dosyaları yükleyebilirsiniz.` |
+| ek.hataDokTur | `Yalnızca PDF, Word (.docx) ve Excel (.xlsx) dosyaları yükleyebilirsiniz.` |
+| ek.hataBicim | `Bu fotoğraf biçimi desteklenmiyor. JPG veya PNG olarak kaydedip tekrar deneyin.` |
+| ek.kuyrukNotu | `Dosyalar kayıt tamamlandığında yüklenecek.` |
+| ek.kismiHata | `Kayıt oluşturuldu, ancak {n} dosya yüklenemedi. Tekrar deneyebilir veya bu sayfadan çıkabilirsiniz.` |
 | ek.hataAdet | `Bir kayda en fazla 20 dosya ekleyebilirsiniz.` |
 | ek.hataBos | `Dosya boş görünüyor. Başka bir dosya seçin.` |
 | ek.izinBaslik | `İzin gerekli` |
