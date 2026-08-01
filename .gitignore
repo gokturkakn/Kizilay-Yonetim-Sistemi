@@ -1,0 +1,26 @@
+# Bağımlılıklar
+node_modules/
+backend/node_modules/
+
+# Veritabanı (üretim/geliştirme verisi — depoya girmez)
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+
+# Yüklenen dosyalar
+backend/uploads/
+
+# Flutter
+app/build/
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/ios/Pods/
+app/android/.gradle/
+app/android/local.properties
+
+# İşletim sistemi / editör
+.DS_Store
+*.log
+.idea/
+*.iml

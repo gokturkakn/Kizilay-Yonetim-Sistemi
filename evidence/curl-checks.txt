@@ -1,0 +1,59 @@
+=== 1. Yanlış şifre ===
+{"error":{"code":"INVALID_CREDENTIALS","message":"E-posta veya şifre hatalı"}} [HTTP 401]
+=== 2. Health ===
+{"status":"ok","db":"ok","seeded":{"provinces":81,"districts":973,"commissions":6}}
+=== 3. İller (limit=100) ===
+total: 81 | ilk: Adana | son: Düzce | İstanbul var mı: True
+=== 4. Komisyonlar + Kurul (bodies) ===
+total: 7
+ - koordinasyon_kurulu | Koordinasyon Kurulu
+ - komisyon | Eğitim Komisyonu
+ - komisyon | Proje Komisyonu
+ - komisyon | Gönüllü Kazanım ve İşbirlikleri Komisyonu
+ - komisyon | Sosyal Medya ve İletişim Komisyonu
+ - komisyon | Sağlıklı Yaşam Komisyonu
+ - komisyon | Evde Bakım Rehberliği Komisyonu
+=== 5. Görev alanları ===
+total: 7 | Afet Müdahale Desteği, Kan Bağışı Organizasyonu, Sosyal Yardım Dağıtımı, Eğitim Faaliyeti, Sağlık Taraması, Toplum Merkezi Etkinliği, Gönüllü Kazanım Etkinliği
+=== 6. Geçersiz TC reddi ===
+{"error":{"code":"INVALID_TC_NO","message":"TC kimlik no geçersiz (11 hane ve sağlama kuralına uygun olmalı)"}} [HTTP 400]
+=== 7. Kişi oluşturma (geçerli TC) ===
+HTTP 409
+{"error":{"code":"CONFLICT","message":"Bu TC kimlik no ile kayıtlı kişi zaten var"}}
+=== 8. Aynı TC ile tekrar (409 beklenir) ===
+{"error":{"code":"CONFLICT","message":"Bu TC kimlik no ile kayıtlı kişi zaten var"}} [HTTP 409]
+=== 9. Pasife alma ===
+{"error":{"code":"NOT_FOUND","message":"Uç nokta bulunamadı: PATCH /api/v1/persons//active"}} [HTTP 404]
+=== 10. Aktif filtresinde görünmemeli / Pasif filtresinde görünmeli ===
+pasif listesinde bulunan: 0
+=== 7b. Kişi oluşturma (temiz TC 99887766550) ===
+{"id":11,"first_name":"Zeynep","last_name":"Demir","tc_no":"99887766550","birth_date":"1988-03-12","phone":"05321234567","email":"zeynep.test@kizilay.org.tr","profession":"Hemşire","unit_type":"il_teskilati","province_id":34,"district_id":null,"is_active":1,"created_at":"2026-08-01 19:26:36","updated_at":"2026-08-01 19:26:36"}
+=== 9b. Pasife alma (id=11) ===
+{"id":11,"first_name":"Zeynep","last_name":"Demir","tc_no":"99887766550","birth_date":"1988-03-12","phone":"05321234567","email":"zeynep.test@kizilay.org.tr","profession":"Hemşire","unit_type":"il_teskilati","province_id":34,"district_id":null,"is_active":0,"created_at":"2026-08-01 19:26:36","updated_at":"2026-08-01 19:26:36"} [HTTP 200]
+=== 10b. Filtre doğrulaması ===
+AKTIF listesinde id=11 sayısı: 0 (0 olmalı)
+PASIF listesinde id=11 sayısı: 1 (1 olmalı)
+=== 11. Audit log (bu kişi için) ===
+kayıt sayısı: 0
+=== 12. Saha rolü: görev formu girişi (izinli olmalı) ===
+{"id":6,"task_area_id":2,"activity_date":"2026-07-28","volunteer_count":14,"beneficiary_count":230,"province_id":34,"district_id":null,"notes":"QA do�
+=== 13. Saha rolü: toplantı girişi (izinli olmalı) ===
+{"id":5,"body_id":1,"meeting_date":"2026-07-30","decision":"QA test kararı","outcome":"Uygulandı","created_by":2,"created_at":"2026-08-01 19:28:50"}
+=== 14. Saha rolü kısıtları (403 beklenir) ===
+POST /persons -> 403
+POST /assignments -> 403
+GET /audit-logs -> 403
+GET /export/persons.xlsx -> 403
+GET /assignments (okuma, 200 beklenir) -> 200
+=== 15. Excel dışa aktarımlar (genel merkez) ===
+persons.xlsx HTTP 200 boyut=7935B ZIP-imzası:OK
+field-activities.xlsx HTTP 200 boyut=7221B ZIP-imzası:OK
+meetings.xlsx HTTP 200 boyut=7152B ZIP-imzası:OK
+assignments.xlsx HTTP 200 boyut=6981B ZIP-imzası:OK
+=== 16. Audit filtre değeri doğrulaması (düzeltme sonrası) ===
+entity=persons -> 4 kayıt
+entity=memberships -> 1 kayıt
+entity=field_activities -> 2 kayıt
+entity=meetings -> 2 kayıt
+entity=assignments -> 0 kayıt
+entity=field-activities (ESKİ hatalı değer) -> 0 kayıt  <-- hata bu şekilde tespit edildi
