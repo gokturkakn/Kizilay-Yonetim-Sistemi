@@ -23,15 +23,21 @@ Kaynak: [SPEC-V2.md](SPEC-V2.md) · v1 tabanı: git commit `12cef9f`
       `/dashboard/timeseries` (boş aylar 0 dolgulu), `/dashboard/provinces`,
       `toplanti_platformu` tanımı, toplantı `participant_count` (migration 011)
 - [x] **268 kontrol** (64 göç + 13 tohum + 191 duman), hepsi geçiyor
-- [ ] **PDF çıktı uçları** — UX-V2 §11/4. Bağımlılıklar kurulu (pdfkit +
-      dejavu-fonts-ttf), uçlar yazılmadı. SPEC-V2 §3.4 "Excel ve PDF çıktıları" diyor.
+- [x] **PDF çıktı uçları** `b67544b` — 8 rapor × 2 biçim, rapor tanımları tek kaynakta
+      (`src/reports.js`), DejaVu TTF gömülü (Türkçe karakterler), görsel doğrulandı.
+      **289 kontrol** (64 göç + 13 tohum + 212 duman)
 
 ## Faz C — Arayüz
 - [x] `docs/UX-V2.md` (UX Architect) `7241716` — 5 sekme + rail/iki panel kırılımları,
       DynamicForm 12 kuralı, üç durumlu statü, 25 belirsizlik çözüldü
-- [ ] **Flutter v2 uygulaması — BAŞLAMADI.** Ajan oturum limitine takılıp düştü
-      (yalnızca v2 model dosyalarına başlamıştı, kod üretilmedi). `app/` hâlâ v1
-      sürümünde ve v2 backend'ine karşı çalışıyor (doğrulandı). En büyük kalan iş.
+- [x] **Flutter v2 uygulaması** `1482d4b` — 44 ekran (~10.900 satır), 5 modül,
+      DynamicForm motoru, uyarlanabilir kabuk. analyze temiz · 88 test · web build ✓
+      · tarayıcıda mobil (5 sekme) ve masaüstü (yan ray) görünümü doğrulandı
+
+## Faz D — Doğrulama (sıradaki)
+- [ ] API Tester: v2 uçlarının sözleşmeye tam uygunluğu
+- [ ] Evidence Collector: uçtan uca akışlar, ekran görüntülü kanıt
+- [ ] Reality Checker: v2 için üretim hazırlığı kararı
 
 ## Faz D — Doğrulama
 - [ ] API Tester: v2 uçlarının sözleşmeye uygunluğu
