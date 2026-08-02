@@ -1159,11 +1159,11 @@ class TimeseriesPoint {
   const TimeseriesPoint({required this.label, required this.value});
 
   factory TimeseriesPoint.fromJson(Map<String, dynamic> j) => TimeseriesPoint(
-        label: (j['month'] ?? j['period'] ?? j['label'] ?? '').toString(),
+        label: (j['period'] ?? j['month'] ?? j['label'] ?? '').toString(),
         value: _double(j['count'] ?? j['value'] ?? j['total']),
       );
 
-  final String label; // 'YYYY-MM' veya doğrudan etiket
+  final String label; // 'YYYY-MM' (interval=month) veya 'YYYY' (interval=year)
   final double value;
 
   /// `2026-07` → `Tem`.
@@ -1181,7 +1181,11 @@ class TimeseriesPoint {
   }
 }
 
-/// `GET /dashboard/provinces` — il bazlı kırılım (API notu N-1).
+/// `GET /dashboard/provinces` — il bazlı kırılım (81 satır).
+///
+/// Sunucu alan adları: `province_id`, `province_code`, `province_name`,
+/// `region_id`, `org_active`, `org_passive`, `org_none`, `person_count`,
+/// `activity_count`.
 class ProvinceBreakdown {
   const ProvinceBreakdown({
     required this.provinceId,
@@ -1190,18 +1194,25 @@ class ProvinceBreakdown {
     required this.aktif,
     required this.pasif,
     required this.teskilatYok,
-    required this.regionName,
+    this.regionId,
+    this.regionName,
+    this.personCount = 0,
+    this.activityCount = 0,
   });
 
   factory ProvinceBreakdown.fromJson(Map<String, dynamic> j) =>
       ProvinceBreakdown(
         provinceId: _int(j['province_id'] ?? j['id']),
         provinceName: (j['province_name'] ?? j['name'] ?? '').toString(),
-        code: _int(j['code'] ?? j['plate']),
-        aktif: _int(j['aktif'] ?? j['org_units_aktif']),
-        pasif: _int(j['pasif'] ?? j['org_units_pasif']),
-        teskilatYok: _int(j['teskilat_yok'] ?? j['org_units_teskilat_yok']),
-        regionName: (j['region_name'] ?? '').toString(),
+        code: _int(j['province_code'] ?? j['code'] ?? j['plate']),
+        aktif: _int(j['org_active'] ?? j['aktif'] ?? j['org_units_aktif']),
+        pasif: _int(j['org_passive'] ?? j['pasif'] ?? j['org_units_pasif']),
+        teskilatYok:
+            _int(j['org_none'] ?? j['teskilat_yok'] ?? j['org_units_teskilat_yok']),
+        regionId: _intOrNull(j['region_id']),
+        regionName: _str(j['region_name']),
+        personCount: _int(j['person_count']),
+        activityCount: _int(j['activity_count']),
       );
 
   final int provinceId;
@@ -1210,7 +1221,10 @@ class ProvinceBreakdown {
   final int aktif;
   final int pasif;
   final int teskilatYok;
-  final String regionName;
+  final int? regionId;
+  final String? regionName;
+  final int personCount;
+  final int activityCount;
 
   int get total => aktif + pasif + teskilatYok;
 }

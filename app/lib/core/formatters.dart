@@ -56,6 +56,57 @@ class Formats {
   static bool trContains(String haystack, String needle) =>
       trLower(haystack).contains(trLower(needle));
 
+  // ---- v2 eklemeleri — docs/UX-V2.md §4.4 ----
+
+  static final NumberFormat _int = NumberFormat.decimalPattern('tr_TR');
+
+  /// Binlik ayraçlı tam sayı (`1.284`) — v2 ölçeği büyüktür.
+  static String number(num? value) =>
+      value == null ? '—' : _int.format(value);
+
+  /// Ondalık saat → Türkçe virgüllü gösterim (`2.5` → `2,5`).
+  static String hours(num? value) {
+    if (value == null) return '—';
+    final s = value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
+    return s.replaceAll('.', ',');
+  }
+
+  /// Dosya boyutu (`184320` → `180,0 KB`).
+  static String fileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${hours(double.parse(kb.toStringAsFixed(1)))} KB';
+    final mb = kb / 1024;
+    return '${hours(double.parse(mb.toStringAsFixed(1)))} MB';
+  }
+
+  /// Dosya adı 40 karakteri aşarsa **ortadan** kısaltılır (§7.2);
+  /// uzantı görünür kalır.
+  static String truncateFileName(String name, {int max = 40}) {
+    if (name.length <= max) return name;
+    final dot = name.lastIndexOf('.');
+    final ext = dot > 0 ? name.substring(dot) : '';
+    final base = dot > 0 ? name.substring(0, dot) : name;
+    final keep = max - ext.length - 1;
+    if (keep <= 4) return '${name.substring(0, max - 1)}…';
+    final head = (keep * 0.7).floor();
+    final tail = keep - head;
+    return '${base.substring(0, head)}…${base.substring(base.length - tail)}$ext';
+  }
+
+  static const List<String> monthNames = [
+    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+  ];
+
+  /// `23 Nisan` biçimi (takvim etkinlikleri — §4.3e).
+  static String dayMonth(int? month, int? day) {
+    if (month == null || day == null || month < 1 || month > 12) return '';
+    return '$day ${monthNames[month - 1]}';
+  }
+
   /// Ad soyaddan baş harfler (avatar için).
   static String initials(String first, String last) {
     final f = first.trim().isEmpty ? '' : first.trim()[0];

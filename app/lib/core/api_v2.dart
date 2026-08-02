@@ -571,11 +571,12 @@ class ApiV2 {
 
   // ---- Dashboard (§12) ----
 
+  /// `activityType`: `gorev | egitim | etkinlik | toplanti` (geçersiz → 400).
   Future<DashboardSummary> dashboardSummary({
     int? regionId,
     int? provinceId,
     int? districtId,
-    int? activityTypeId,
+    String? activityType,
     String? from,
     String? to,
   }) async {
@@ -584,7 +585,7 @@ class ApiV2 {
           'region_id': regionId,
           'province_id': provinceId,
           'district_id': districtId,
-          'activity_type': activityTypeId,
+          'activity_type': activityType,
           'from': from,
           'to': to,
         }));
@@ -600,9 +601,15 @@ class ApiV2 {
     return PagedRaw.of(resp).rows.map(StatusBreakdown.fromJson).toList();
   }
 
-  /// `GET /dashboard/timeseries` — 404 ise `null` döner (§11 N-2 geri düşüşü).
+  /// `GET /dashboard/timeseries?metric=&interval=` →
+  /// `{metric, interval, data:[{period:"2026-01", count:n}]}`.
+  /// Boş dönemler sıfırla doldurulmuş ve kronolojik sıradadır.
+  ///
+  /// Uç bulunamazsa (404) `null` döner → trend kartı hiç render edilmez
+  /// (§11 N-2 geri düşüşü).
   Future<List<TimeseriesPoint>?> dashboardTimeseries({
-    String metric = 'tasks',
+    String metric = 'gorev',
+    String interval = 'month',
     String? from,
     String? to,
     int? regionId,
@@ -612,6 +619,7 @@ class ApiV2 {
       final resp = await client.get('/dashboard/timeseries',
           query: _q({
             'metric': metric,
+            'interval': interval,
             'from': from,
             'to': to,
             'region_id': regionId,
@@ -624,7 +632,8 @@ class ApiV2 {
     }
   }
 
-  /// `GET /dashboard/provinces` — 404 ise `null` (§11 N-1: istemci sayımına düşülür).
+  /// `GET /dashboard/provinces` → 81 satır. 404 ise `null` (§11 N-1:
+  /// istemci tarafı sayıma düşülür).
   Future<List<ProvinceBreakdown>?> dashboardProvinces({
     int? regionId,
     String? from,

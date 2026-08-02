@@ -5,26 +5,42 @@ import 'package:provider/provider.dart';
 
 import 'core/api.dart';
 import 'core/api_client.dart';
+import 'core/api_v2.dart';
+import 'core/lookup_cache.dart';
 import 'core/ref_data.dart';
 import 'core/session.dart';
 import 'core/strings.dart';
-import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'screens/v2/adaptive_shell.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('tr_TR');
   final api = Api(ApiClient());
+  final apiV2 = ApiV2(api.client);
   final session = Session(api);
   await session.restore();
-  runApp(TeskilatApp(api: api, session: session));
+  runApp(TeskilatApp(
+    api: api,
+    apiV2: apiV2,
+    lookupCache: LookupCache(apiV2),
+    session: session,
+  ));
 }
 
 class TeskilatApp extends StatelessWidget {
-  const TeskilatApp({super.key, required this.api, required this.session});
+  const TeskilatApp({
+    super.key,
+    required this.api,
+    required this.apiV2,
+    required this.lookupCache,
+    required this.session,
+  });
 
   final Api api;
+  final ApiV2 apiV2;
+  final LookupCache lookupCache;
   final Session session;
 
   @override
@@ -32,6 +48,11 @@ class TeskilatApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<Api>.value(value: api),
+        // v2 uçları aynı ApiClient örneğini (ve JWT'yi) paylaşır.
+        Provider<ApiV2>.value(value: apiV2),
+        // LookupCache bir ChangeNotifier'dır (Tanımlar değişince dinleyicileri
+        // uyarır) — düz Provider ile kaydedilemez.
+        ChangeNotifierProvider<LookupCache>.value(value: lookupCache),
         Provider<RefData>(create: (_) => RefData(api)),
         ChangeNotifierProvider<Session>.value(value: session),
       ],
@@ -68,7 +89,7 @@ class _Root extends StatelessWidget {
       return const LoginScreen();
     }
     // Kullanıcı değişince iskelet sıfırlanır.
-    return HomeShell(key: ValueKey('shell-${session.user!.id}'));
+    return AdaptiveShell(key: ValueKey('shell-${session.user!.id}'));
   }
 }
 

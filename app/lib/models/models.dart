@@ -53,17 +53,26 @@ class AppUser {
 }
 
 class Province {
-  const Province({required this.id, required this.code, required this.name});
+  const Province({
+    required this.id,
+    required this.code,
+    required this.name,
+    this.regionId,
+  });
 
   factory Province.fromJson(Map<String, dynamic> json) => Province(
         id: _asInt(json['id']),
         code: _asInt(json['code']),
         name: json['name']?.toString() ?? '',
+        regionId: _asIntOrNull(json['region_id']),
       );
 
   final int id;
   final int code;
   final String name;
+
+  /// v2 eklemesi — API-V2 §3 (`GET /provinces` artık `region_id` döndürür).
+  final int? regionId;
 }
 
 class District {
