@@ -267,6 +267,35 @@ try {
   const xlsxForbidden = await req('GET', '/export/persons.xlsx', { token: saha, raw: true });
   check('export saha için 403', xlsxForbidden.status === 403);
 
+  // SPEC-V2 §3.4: "Excel ve PDF çıktıları". Sekiz raporun ikisi de üretilebilmeli.
+  console.log('\n[7b] PDF dışa aktarım');
+  const REPORT_KEYS = ['persons', 'org-units', 'tasks', 'trainings', 'events',
+    'meetings', 'assignments', 'field-activities'];
+  for (const key of REPORT_KEYS) {
+    const pdfRes = await req('GET', `/export/${key}.pdf`, { token: admin, raw: true });
+    const pdfBuf = Buffer.from(await pdfRes.arrayBuffer());
+    check(`${key}.pdf üretiliyor`, pdfRes.status === 200
+      && (pdfRes.headers.get('content-type') || '').includes('pdf')
+      && pdfBuf.subarray(0, 4).toString('latin1') === '%PDF'
+      && pdfBuf.length > 1000, `durum: ${pdfRes.status}, boyut: ${pdfBuf.length}`);
+    const xRes = await req('GET', `/export/${key}.xlsx`, { token: admin, raw: true });
+    const xBuf = Buffer.from(await xRes.arrayBuffer());
+    check(`${key}.xlsx üretiliyor`, xRes.status === 200 && xBuf[0] === 0x50 && xBuf[1] === 0x4b);
+  }
+
+  // PDFKit'in gömülü Helvetica'sı Türkçe karakterleri bozar; Unicode TTF gömülmeli.
+  // Bu kontrol olmadan raporlar sessizce "Kiþiler" gibi çıkabilir.
+  const trPdf = Buffer.from(await (await req('GET', '/export/persons.pdf', { token: admin, raw: true })).arrayBuffer());
+  check('PDF Unicode font gömüyor (Türkçe karakterler için)',
+    trPdf.includes(Buffer.from('FontFile2')) && trPdf.includes(Buffer.from('DejaVu')));
+  check('PDF WinAnsi Helvetica kullanmıyor',
+    !trPdf.includes(Buffer.from('/BaseFont /Helvetica')));
+
+  const pdfFiltered = await req('GET', '/export/org-units.pdf?status=teskilat_yok&type=il_baskanligi', { token: admin, raw: true });
+  check('PDF filtreleri uyguluyor', pdfFiltered.status === 200);
+  check('PDF saha için 403', (await req('GET', '/export/persons.pdf', { token: saha, raw: true })).status === 403);
+  check('bilinmeyen rapor 404', (await req('GET', '/export/olmayan.pdf', { token: admin, raw: true })).status === 404);
+
 
   // ======================================================================
   // v2 modülleri (Faz A + Faz B)

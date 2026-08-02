@@ -611,3 +611,21 @@ korunur. Yalnız eksik olan eklenir.
 | 6 | `users.region_id/province_id` kaydediliyor ama yazma yetkisini kısıtlamıyor | Nesne düzeyinde yetkilendirme (denetim Y-2'nin tamamı) v2.1 kapsamındadır. |
 | 7 | Süre alanı `duration_hours REAL` (saat) | SPEC "Süre" diyor, birim vermiyor; saat ondalıklı olarak (4.5) tutulur, dashboard toplar. |
 | 8 | 7 bölge temsilciliği birimi de tohumlandı | SPEC-V2 §3.1 "Bölge Temsilcileri" alt modülünü ve K4 `bolge_temsilciligi` türünü istiyor; il başkanlıkları bunların altına bağlanır. |
+
+## Rapor dışa aktarım (Excel + PDF)
+
+`GET /export/{rapor}.{xlsx|pdf}` — `genel_merkez` yetkisi gerekir.
+
+Raporlar: `persons` · `org-units` · `tasks` · `trainings` · `events` · `meetings` ·
+`assignments` · `field-activities` (v1 uyumu için korundu).
+
+- Rapor tanımları (sorgu + Türkçe sütunlar) `src/reports.js` içinde tek yerde durur;
+  Excel ve PDF aynı tanımı kullandığından iki biçim ayrışamaz.
+- Filtreler ilgili liste ucuyla aynıdır: `region_id`, `province_id`, `district_id`,
+  `from`, `to`, `status`, `type`, `q` (rapora göre değişir). Sayfalama uygulanmaz.
+- PDF: yatay A4, Kızılay kırmızısı başlık bandı, başlık altında uygulanan filtrelerin
+  özeti ve kayıt sayısı, sayfa numaraları. **Türkçe karakterler için DejaVu Sans TTF
+  gömülür** (PDFKit'in varsayılan Helvetica'sı WinAnsi olduğundan ş/ğ/İ/ı karakterlerini
+  bozar). Kayıt yoksa "Seçilen filtrelere uygun kayıt bulunamadı." yazar.
+- Bilinmeyen rapor adı → 404.
+
