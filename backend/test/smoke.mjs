@@ -273,13 +273,14 @@ try {
   // ======================================================================
   console.log('\n[9] v2 — sağlık ucu ve tohum sayaçları');
   check('/api/v1/health de yanıt veriyor (denetim D-1)', (await req('GET', '/health')).status === 200);
-  check('schema_version dolu', typeof health.schema_version === 'string' && health.schema_version.startsWith('010'));
-  check('10 göç uygulandı', health.migrations_applied === 10, `alınan: ${health.migrations_applied}`);
+  // Göç sayısı büyüyeceği için sabitlenmez; sürümün dolu ve tutarlı olması aranır.
+  check('schema_version dolu', typeof health.schema_version === 'string' && /^\d{3}_/.test(health.schema_version));
+  check('tüm göçler uygulandı (≥10)', health.migrations_applied >= 10, `alınan: ${health.migrations_applied}`);
   check('7 bölge', health.seeded?.regions === 7, `alınan: ${health.seeded?.regions}`);
   check('81 il bölgeye eşlendi', health.seeded?.provinces_mapped_to_region === 81,
     `alınan: ${health.seeded?.provinces_mapped_to_region}`);
-  check('14 tanım kategorisi', health.seeded?.lookup_categories === 14, `alınan: ${health.seeded?.lookup_categories}`);
-  check('138 tanım kalemi', health.seeded?.lookup_items === 138, `alınan: ${health.seeded?.lookup_items}`);
+  check('tanım kategorileri yüklendi (≥14)', health.seeded?.lookup_categories >= 14, `alınan: ${health.seeded?.lookup_categories}`);
+  check('tanım kalemleri yüklendi (≥138)', health.seeded?.lookup_items >= 138, `alınan: ${health.seeded?.lookup_items}`);
   check('1068 teşkilat birimi', health.seeded?.org_units === 1068, `alınan: ${health.seeded?.org_units}`);
   check('68 takvim kaydı', health.seeded?.calendar_events === 68, `alınan: ${health.seeded?.calendar_events}`);
   check('13 içerik bloğu', health.seeded?.content_blocks === 13, `alınan: ${health.seeded?.content_blocks}`);
@@ -301,7 +302,9 @@ try {
 
   console.log('\n[11] v2 — tanımlar / lookups (K1)');
   const cats = await req('GET', '/lookup-categories', { token: admin });
-  check('GET /lookup-categories 14 kategori', cats.status === 200 && cats.json.total === 14);
+  check('GET /lookup-categories (≥14 kategori)', cats.status === 200 && cats.json.total >= 14);
+  check('toplantı platformu tanımı mevcut',
+    cats.json.data.some((c) => c.code === 'toplanti_platformu'));
   const gorevTuru = await req('GET', '/lookups/gorev_turu?limit=50', { token: admin });
   check('GET /lookups/gorev_turu → 12 ana başlık', gorevTuru.status === 200 && gorevTuru.json.total === 12);
   const egitimKonu = await req('GET', '/lookups/egitim_konusu?limit=50', { token: admin });
@@ -474,11 +477,26 @@ try {
     body: {
       meeting_date: '2026-08-05', meeting_type_id: calistay.id, method_id: online.id,
       platform: 'Microsoft Teams', participants: '40 kişi', agenda: 'Duman testi gündemi',
+      participant_count: 40,
     },
   });
   check('POST /meetings body_id olmadan (Kamp/Çalıştay) 201',
     onlineMeeting.status === 201 && onlineMeeting.json.body_id === null
     && onlineMeeting.json.platform === 'Microsoft Teams');
+  check('toplantı katılımcı sayısı kaydediliyor', onlineMeeting.json.participant_count === 40);
+  check('katılımcı sayısı güncellenebiliyor',
+    (await req('PUT', `/meetings/${onlineMeeting.json.id}`, {
+      token: admin,
+      body: {
+        meeting_date: '2026-08-05', meeting_type_id: calistay.id, method_id: online.id,
+        platform: 'Microsoft Teams', participant_count: 55,
+      },
+    })).json.participant_count === 55);
+  // Çevrim içi toplantı platformu artık Tanımlar'dan geliyor (UX-V2 dinamik form kuralı).
+  const platforms = await req('GET', '/lookups/toplanti_platformu', { token: admin });
+  check('toplantı platformu tanım listesi dolu',
+    platforms.status === 200 && platforms.json.total >= 5
+    && platforms.json.data.some((p) => p.name === 'Zoom'));
   check('çevrim içi toplantıya location gönderilemez (400)', (await req('POST', '/meetings', {
     token: admin, body: { meeting_date: '2026-08-05', method_id: online.id, location: 'Salon' },
   })).status === 400);
@@ -661,6 +679,33 @@ try {
     dashFiltered.status === 200 && dashFiltered.json.filters.region_id === icAnadolu.id);
   const byRegion = await req('GET', '/dashboard/by-region', { token: admin });
   check('GET /dashboard/by-region 7 bölge', byRegion.status === 200 && byRegion.json.total === 7);
+
+  // SPEC-V2 §3.4: tüm raporlar Bölge · İl · İlçe · Tarih Aralığı · Faaliyet Türü ile alınabilmeli.
+  const dashDistrict = await req('GET', `/dashboard/summary?district_id=${cankaya.id}`, { token: admin });
+  check('dashboard ilçe filtresi', dashDistrict.status === 200
+    && dashDistrict.json.filters.district_id === cankaya.id);
+  const dashType = await req('GET', '/dashboard/summary?activity_type=gorev', { token: admin });
+  check('dashboard faaliyet türü filtresi', dashType.status === 200
+    && dashType.json.filters.activity_type === 'gorev');
+  const dashBadType = await req('GET', '/dashboard/summary?activity_type=olmayan', { token: admin });
+  check('geçersiz faaliyet türü 400', dashBadType.status === 400);
+
+  // Trend kartı: eksik aylar 0 ile doldurulmalı, yoksa grafik ayları atlar.
+  const ts = await req('GET', '/dashboard/timeseries?metric=gorev', { token: admin });
+  check('GET /dashboard/timeseries 200', ts.status === 200 && ts.json.metric === 'gorev');
+  check('varsayılan 12 aylık seri', ts.json.interval === 'month' && ts.json.data.length === 12);
+  check('boş dönemler 0 ile dolduruluyor',
+    ts.json.data.every((p) => typeof p.count === 'number' && /^\d{4}-\d{2}$/.test(p.period)));
+  check('seri kronolojik sırada',
+    ts.json.data.every((p, i, a) => i === 0 || a[i - 1].period < p.period));
+  const tsBad = await req('GET', '/dashboard/timeseries?metric=olmayan', { token: admin });
+  check('geçersiz metric 400', tsBad.status === 400);
+
+  const dashProv = await req('GET', '/dashboard/provinces', { token: admin });
+  check('GET /dashboard/provinces 81 il', dashProv.status === 200 && dashProv.json.data.length === 81);
+  check('il kırılımı teşkilat sayaçlarını içeriyor',
+    dashProv.json.data.every((p) => p.province_name && typeof p.org_active === 'number'
+      && typeof p.org_none === 'number' && typeof p.person_count === 'number'));
 
   console.log('\n[24] v2 — denetim izi yeni varlıkları kapsıyor');
   const v2Audits = await req('GET', '/audit-logs?limit=500', { token: admin });

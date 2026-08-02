@@ -85,6 +85,37 @@ class ApiClient {
     throw _errorFrom(resp);
   }
 
+  /// Çok parçalı yükleme (dosya ekleri — API-V2 §9).
+  Future<dynamic> postMultipart(
+    String path, {
+    required List<int> bytes,
+    required String fileName,
+    required Map<String, String> fields,
+  }) async {
+    http.Response resp;
+    try {
+      final request = http.MultipartRequest('POST', _uri(path));
+      request.headers.addAll(_headers(json: false));
+      request.fields.addAll(fields);
+      request.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: fileName),
+      );
+      final streamed = await _client.send(request);
+      resp = await http.Response.fromStream(streamed);
+    } catch (_) {
+      throw const ApiException(0, 'network', Str.hataAg);
+    }
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      if (resp.body.isEmpty) return null;
+      try {
+        return jsonDecode(utf8.decode(resp.bodyBytes));
+      } catch (_) {
+        return null;
+      }
+    }
+    throw _errorFrom(resp);
+  }
+
   Future<dynamic> _send(String method, String path,
       {Map<String, String>? query, Object? body}) async {
     http.Response resp;

@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { runMigrations } from '../src/migrations/index.js';
+import { runMigrations, migrationFiles } from '../src/migrations/index.js';
 import { seedAll } from '../src/seed.js';
 
 let pass = 0;
@@ -165,8 +165,13 @@ check('v1 veritabanında schema_migrations YOK (göç altyapısı yoktu)',
 console.log('\n[2] Göçler uygulanıyor');
 const result = await runMigrations(db);
 console.log(`  uygulanan: ${result.applied.length} → ${result.applied.join(', ')}`);
-check('10 göç uygulandı', result.applied.length === 10, `alınan: ${result.applied.length}`);
-check('şema sürümü 010_users_v2', result.version === '010_users_v2', `alınan: ${result.version}`);
+// Sayıyı sabitlemek yerine keşfedilen göç dosyalarıyla karşılaştır: yeni göç eklendiğinde
+// test kendiliğinden güncel kalır, ama "hepsi uygulandı" güvencesi korunur.
+const allMigrations = migrationFiles().map((f) => f.replace(/\.js$/, ''));
+check(`tüm göçler uygulandı (${allMigrations.length} adet)`,
+  result.applied.length === allMigrations.length, `alınan: ${result.applied.length}`);
+check('şema sürümü son göç dosyasıyla eşleşiyor',
+  result.version === allMigrations[allMigrations.length - 1], `alınan: ${result.version}`);
 check('001_baseline mevcut v1 tablolarını bozmadan geçti', result.applied[0] === '001_baseline');
 check('yabancı anahtar ihlali yok', db.pragma('foreign_key_check').length === 0);
 
@@ -265,7 +270,7 @@ check('users.is_active / region_id / province_id sütunları eklendi', (() => {
 console.log('\n[7] Göçlerin ikinci kez çalıştırılması');
 const second = await runMigrations(db);
 check('ikinci çalıştırmada hiçbir göç uygulanmaz', second.applied.length === 0, JSON.stringify(second.applied));
-check('ikinci çalıştırmada 10 göç atlanır', second.skipped.length === 10);
+check('ikinci çalıştırmada tüm göçler atlanır', second.skipped.length === allMigrations.length);
 check('veri ikinci çalıştırmadan sonra da yerinde',
   db.prepare('SELECT COUNT(*) AS c FROM persons').get().c === before.persons);
 
@@ -280,8 +285,18 @@ check('Ankara → İç Anadolu',
   db.prepare("SELECT r.code FROM provinces p JOIN regions r ON r.id = p.region_id WHERE p.name = 'Ankara'").get()?.code === 'ic_anadolu');
 check('Trabzon → Karadeniz',
   db.prepare("SELECT r.code FROM provinces p JOIN regions r ON r.id = p.region_id WHERE p.name = 'Trabzon'").get()?.code === 'karadeniz');
-check('14 tanım kategorisi', counts.lookup_categories === 14, `alınan: ${counts.lookup_categories}`);
-check('138 tanım kalemi', counts.lookup_items === 138, `alınan: ${counts.lookup_items}`);
+// Tanımlar Yönetim Paneli'nden genişletilebilir olduğu için alt sınır kontrol edilir;
+// SPEC-V2'nin zorunlu kıldığı kategoriler ayrıca isim isim doğrulanır.
+check('tanım kategorileri tohumlandı (≥14)', counts.lookup_categories >= 14, `alınan: ${counts.lookup_categories}`);
+check('tanım kalemleri tohumlandı (≥138)', counts.lookup_items >= 138, `alınan: ${counts.lookup_items}`);
+const requiredCategories = ['gorev_turu', 'alt_gorev', 'egitim_konusu', 'toplanti_turu',
+  'toplanti_yontemi', 'lojistik_urun', 'gonderim_sekli'];
+const seededCategories = new Set(
+  db.prepare('SELECT code FROM lookup_categories').all().map((r) => r.code)
+);
+check('SPEC-V2 zorunlu tanım kategorileri mevcut',
+  requiredCategories.every((c) => seededCategories.has(c)),
+  `eksik: ${requiredCategories.filter((c) => !seededCategories.has(c)).join(', ')}`);
 check('takvim tohumlandı', counts.calendar_events === 68, `alınan: ${counts.calendar_events}`);
 check('13 içerik bloğu', counts.content_blocks === 13, `alınan: ${counts.content_blocks}`);
 

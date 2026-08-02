@@ -8,22 +8,25 @@ Kaynak: [SPEC-V2.md](SPEC-V2.md) · v1 tabanı: git commit `12cef9f`
 - [x] **v1 git'e alındı** (`12cef9f`, 181 dosya) — breaking göç öncesi geri dönüş noktası
 - [x] `.gitignore` (veritabanı, node_modules, build çıktıları, yüklenen dosyalar hariç)
 
-## Faz A+B — Veri temeli ve API (Backend Architect) 🔄
-- [ ] Göç (migration) altyapısı — v1 veritabanı kayıpsız yükseltilmeli
-- [ ] K1 lookups: tüm açılır listeler DB'den, kod değişikliği gerektirmeden
-- [ ] K2 7 coğrafi bölge, 81 ilin eşlenmesi
-- [ ] K3 `is_active` → `status` (aktif/pasif/teşkilat_yok), geriye dönük uyum
-- [ ] K4 org_units + görevlendirmeler (il/ilçe başkanlıkları "teşkilat yok" ile başlar)
-- [ ] K5 dosya ekleri (fotoğraf/doküman/tutanak/sunum)
-- [ ] K6 takvim (bayramlar, resmî günler, önemli gün ve haftalar)
-- [ ] Modül API'leri: görevler, eğitimler, etkinlikler, toplantılar v2, lojistik,
-      dashboard, tanımlar, kullanıcı yönetimi
-- [ ] `docs/API-V2.md` sözleşmesi
+## Faz A+B — Veri temeli ve API (Backend Architect) ✅ `a179712`
+- [x] Göç altyapısı: 10 sıralı migration, `schema_migrations`, açılışta fail-fast
+- [x] K1 lookups: 14 kategori / 138 kalem, görev türü→alt görev hiyerarşisi
+- [x] K2 7 bölge, 81 il plaka koduyla eşlendi (eşlenmemiş: 0)
+- [x] K3 `is_active` → `status`; `is_active` API'de türetiliyor → v1 istemcisi çalışıyor
+- [x] K4 1068 org_unit; boşluk raporu `GET /org-units/summary`
+- [x] K5 dosya ekleri (UUID adlandırma, MIME beyaz listesi, path traversal test edildi)
+- [x] K6 takvim: 68 bayram/resmî gün/önemli gün-hafta
+- [x] 79 yeni uç + kullanıcı yönetimi · `docs/API-V2.md`
+- [x] **253 kontrol** (63 göç + 13 tohum + 177 duman), hepsi geçiyor
+- [x] Geriye dönük uyum v1 Flutter uygulamasıyla tarayıcıda doğrulandı
+- [ ] 🔄 Açık kapatma turu: dashboard `district_id`+`activity_type` filtreleri,
+      `/dashboard/timeseries`, `/dashboard/provinces`, PDF çıktıları,
+      `toplanti_platformu` tanımı, toplantı katılımcı sayısı
 
-## Faz C — Arayüz (UX Architect → Frontend Developer) 🔄
-- [ ] `docs/UX-V2.md`: 5 modüllü navigasyon, responsive (mobil/tablet/masaüstü),
-      dashboard tasarımı, dinamik form kuralı, üç durumlu statü bileşeni
-- [ ] Flutter uygulaması: yeni navigasyon, modül ekranları, dinamik formlar, dashboard
+## Faz C — Arayüz
+- [x] `docs/UX-V2.md` (UX Architect) `7241716` — 5 sekme + rail/iki panel kırılımları,
+      DynamicForm 12 kuralı, üç durumlu statü, 25 belirsizlik çözüldü
+- [ ] 🔄 Flutter v2 uygulaması (Frontend Developer)
 
 ## Faz D — Doğrulama
 - [ ] API Tester: v2 uçlarının sözleşmeye uygunluğu

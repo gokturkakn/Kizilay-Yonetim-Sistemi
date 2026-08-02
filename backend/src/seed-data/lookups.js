@@ -18,6 +18,7 @@ export const LOOKUP_CATEGORIES = [
   { code: 'etkinlik_adi', name: 'Etkinlik Adı' },
   { code: 'toplanti_turu', name: 'Toplantı Türü' },
   { code: 'toplanti_yontemi', name: 'Toplantı Yöntemi' },
+  { code: 'toplanti_platformu', name: 'Toplantı Platformu' },
   { code: 'lojistik_urun', name: 'Lojistik Ürünü' },
   { code: 'gonderim_sekli', name: 'Gönderim Şekli' },
   { code: 'gorev_unvani', name: 'Görev / Unvan' },
@@ -111,6 +112,8 @@ export const LOOKUP_ITEMS = {
     'İlçe Toplantısı', 'Komisyon Toplantısı', 'Kamp', 'Çalıştay',
   ],
   toplanti_yontemi: ['Yüz Yüze', 'Çevrim İçi'],
+  // Çevrim içi toplantı formunun "Platform" alanı bu listeden seçilir (UX-V2 §11 N-7).
+  toplanti_platformu: ['Zoom', 'Microsoft Teams', 'Google Meet', 'Webex', 'Diğer'],
 
   lojistik_urun: LOJISTIK_URUNLERI,
   gonderim_sekli: ['Kargo', 'Elden Teslim', 'Kurye'],
@@ -134,6 +137,7 @@ export const EXPECTED_ITEM_COUNTS = {
   gorev_turu: 12,
   egitim_konusu: 18,
   toplanti_turu: 7,
+  toplanti_platformu: 5,
   lojistik_urun: 15,
   bolge: 7,
 };
