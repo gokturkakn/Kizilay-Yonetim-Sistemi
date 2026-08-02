@@ -1,6 +1,6 @@
 # API Contract — Teşkilat Yönetim Sistemi **v2**
 
-**Sürüm:** 2.0 · **Tarih:** 2026-08-01 · **Durum:** Faz A + Faz B (veri temeli + API) — bağlayıcı sözleşme
+**Sürüm:** 2.1 · **Tarih:** 2026-08-02 · **Durum:** Faz A + Faz B (veri temeli + API) + M6 (dokümanlar) — bağlayıcı sözleşme
 
 Base URL: `http://localhost:4141/api/v1` · JSON · JWT bearer auth (`POST /auth/login` hariç).
 Hata gövdesi: `{ "error": { "code": string, "message": string } }`.
@@ -382,13 +382,16 @@ rastgele bir ad üretir (`<uuid>.<ext>`), orijinal ad yalnız görüntüleme iç
 }
 ```
 Geçerli `entity` değerleri: `tasks`, `trainings`, `events`, `meetings`, `persons`,
-`org_units`, `material_requests`, `shipments`, `field_activities`.
+`org_units`, `material_requests`, `shipments`, `field_activities`, `documents`.
 
 - `POST /attachments` — **multipart/form-data**: `file` (dosya), `entity`, `entity_id`, `kind` → 201
 - `GET /attachments?entity=&entity_id=&kind=` → `{data:[…], total}`
 - `GET /attachments/:id` → meta
 - `GET /attachments/:id/download` → dosya (`Content-Disposition: attachment`)
 - `DELETE /attachments/:id` — yükleyen kullanıcı veya `genel_merkez` → 204 (diskten de siler)
+
+Bağlı olduğu kayıt silindiğinde ekler de gider: `DELETE /documents/:id` hem `attachments`
+satırlarını hem diskteki dosyaları temizler (sahipsiz dosya kalmaz).
 
 ---
 
@@ -562,6 +565,8 @@ transaction'ında çalışır; hata halinde geri alınır ve sunucu **açılmaz*
 | 008 | `008_content_blocks` | `content_blocks` |
 | 009 | `009_field_modules` | `tasks`, `trainings`, `events`, `meetings` v2 sütunları, lojistik tabloları |
 | 010 | `010_users_v2` | `users.is_active/region_id/province_id/updated_at` |
+| 011 | `011_meeting_participants` | `meetings.participant_count`, `meetings.district_id` |
+| 012 | `012_documents` | `documents` (SPEC-V2-M6 — kılavuz ve doküman kütüphanesi) |
 
 v1 veritabanı yerinde yükseltilir; `persons`, `meetings`, `field_activities`, `memberships`,
 `assignments`, `audit_logs` verisi **kaybolmaz** (`backend/test/migration.mjs` bunu kanıtlar).
@@ -577,8 +582,8 @@ sonunda `PRAGMA foreign_key_check` ile bütünlüğü doğrular; ihlal varsa aç
 | Veri | Adet | Not |
 |---|---|---|
 | Bölge | 7 | Marmara 11 · Ege 8 · Akdeniz 8 · İç Anadolu 13 · Karadeniz 18 · Doğu Anadolu 14 · Güneydoğu 9 = **81 il** |
-| Tanım kategorisi | 14 | SPEC-V2 §2 K1'deki liste birebir |
-| Tanım kalemi | 138 | `gorev_turu` 12 · `alt_gorev` 39 · `egitim_konusu` 18 · `toplanti_turu` 7 · `lojistik_urun` 15 · `gorev_unvani` 12 · `etkinlik_turu` 8 · `etkinlik_adi` 8 · `bolge` 7 · `durum` 3 · `gonderim_sekli` 3 · `egitim_kategorisi` 2 · `egitim_yontemi` 2 · `toplanti_yontemi` 2 |
+| Tanım kategorisi | 16 | SPEC-V2 §2 K1'deki 14 kategori + `toplanti_platformu` (UX-V2 N-7) + `dokuman_kategorisi` (M6) |
+| Tanım kalemi | 147 | `gorev_turu` 12 · `alt_gorev` 39 · `egitim_konusu` 18 · `toplanti_turu` 7 · `lojistik_urun` 15 · `gorev_unvani` 12 · `etkinlik_turu` 8 · `etkinlik_adi` 8 · `bolge` 7 · `toplanti_platformu` 5 · `dokuman_kategorisi` 4 · `durum` 3 · `gonderim_sekli` 3 · `egitim_kategorisi` 2 · `egitim_yontemi` 2 · `toplanti_yontemi` 2 |
 | Teşkilat birimi | 1068 | 1 kurul + 6 komisyon + 7 bölge temsilciliği + 81 il + 973 ilçe |
 | Takvim kaydı | 68 | 5 millî bayram · 9 resmî gün · 2 dinî bayram · 7 dinî gün · 28 önemli gün · 17 önemli hafta |
 | Takvim yıl tarihi | 4 | Ramazan/Kurban Bayramı × 2026, 2027 |
@@ -612,12 +617,105 @@ korunur. Yalnız eksik olan eklenir.
 | 7 | Süre alanı `duration_hours REAL` (saat) | SPEC "Süre" diyor, birim vermiyor; saat ondalıklı olarak (4.5) tutulur, dashboard toplar. |
 | 8 | 7 bölge temsilciliği birimi de tohumlandı | SPEC-V2 §3.1 "Bölge Temsilcileri" alt modülünü ve K4 `bolge_temsilciligi` türünü istiyor; il başkanlıkları bunların altına bağlanır. |
 
+---
+
+## 19. Kılavuz ve Dokümanlar (v2.1 — SPEC-V2-M6)
+
+Genel merkezin sahaya dağıttığı kılavuz, form, matbu belge, proje ve yönetsel dokümanların
+kütüphanesi. Saha için **okuma + indirme**; yükleme ve yayından kaldırma `genel_merkez` yetkisinde.
+
+### 19.1 İki dik eksen (SPEC-V2-M6 §2)
+
+| Eksen | Alan | Nereden yönetilir |
+|---|---|---|
+| **Tür** — ne olduğu | `category_id` | Tanımlar → `dokuman_kategorisi` (K1; kod değişmeden genişletilir) |
+| **Kapsam** — kime ait olduğu | `scope` + coğrafya | İstek gövdesi / filtre |
+
+"Yerelde kullanılacak olanlar" bir kategori **değildir**, her kategoride çalışan bir filtredir.
+Tohumlanan 4 kategori: **Kılavuzlar · Formlar ve Matbu Belgeler · Proje Dokümanları · Yönetsel Dokümanlar**.
+
+### 19.2 Model — `document`
+
+```jsonc
+{
+  "id": 1,
+  "title": "Gönüllü El Kitabı",
+  "description": "…",
+  "category_id": 145, "category_name": "Kılavuzlar",
+  "scope": "genel|bolge|il|ilce",
+  "scope_label": "Genel",                 // rozet: Genel / <Bölge> / <İl> / <İlçe>
+  "region_id": null, "province_id": null, "district_id": null,
+  "region_name": null, "province_name": null, "district_name": null,
+  "version": "v2.1",                      // serbest metin ("2026 Revizyon" da olabilir)
+  "published_at": "2026-01-15",           // geriye dönük tarih verilebilir
+  "valid_until": "2026-06-30",            // matbu izin belgeleri için; null olabilir
+  "is_expired": 0,                        // türetilir → "Süresi doldu" rozeti
+  "is_active": 1,                         // 0 = yayından kaldırıldı (SİLİNMEDİ)
+  "download_count": 12,
+  "attachment_count": 2,
+  "created_by": 1, "created_by_name": "Genel Merkez Admin",
+  "created_at": "…", "updated_at": "…"
+}
+```
+
+`GET /documents/:id` gövdeye ayrıca `attachments: [ … ]` ekler (bkz. §9 dosya eki modeli).
+
+### 19.3 Kapsam kuralları (400 ile zorlanır)
+
+| `scope` | Zorunlu | Boş olmalı | Türetilen |
+|---|---|---|---|
+| `genel` | — | `region_id`, `province_id`, `district_id` | — |
+| `bolge` | `region_id` | `province_id`, `district_id` | — |
+| `il` | `province_id` | `district_id` | `region_id` ← `provinces.region_id` |
+| `ilce` | `district_id` | — | `province_id` ← ilçe, `region_id` ← il |
+
+- İlçe seçilen ile ait değilse → 400 *"İlçe, seçilen ile ait değil"*.
+- Gönderilen `region_id` ilden türetilenle çelişirse → 400 *"Seçilen il, gönderilen bölgeye ait değil"*.
+- **Türetme bilinçlidir:** bölge tek doğru kaynaktan (`provinces.region_id`) gelir, böylece
+  `?region_id=` filtresi il/ilçe kapsamlı belgeleri de kapsar ("Marmara'ya ait her şey").
+- `PUT` ile kapsam değiştirilirse eski coğrafya alanları **taşınmaz**, temizlenir.
+
+### 19.4 Uçlar
+
+- `GET /documents?category_id=&scope=&region_id=&province_id=&district_id=&q=&is_active=`
+  → `{data, total}`
+  - `q` başlık **ve** açıklamada arar, **Türkçe büyük/küçük harf duyarsızdır**
+    (`I↔ı`, `İ↔i`; SQLite'ın ASCII `LIKE`'ı yetmediği için `tr_lower` işlevi kullanılır).
+    Türkçe kuralı gereği noktalı/noktasız i ayrımı **korunur**: `kilavuz` ≠ `kılavuz`.
+  - Sıralama: yayın tarihi (yeniden eskiye), sonra id.
+  - **`saha` rolü yalnız `is_active = 1` kayıtları görür — kısıt sunucuda zorlanır.**
+    Saha `is_active=0` gönderirse iki koşul çelişir ve **boş liste** döner.
+- `GET /documents/:id` → tek doküman + `attachments`. Saha, yayından kaldırılmış bir
+  dokümanda **404** alır (varlığı sızdırılmaz).
+- `POST /documents` *(genel_merkez)* — zorunlu: `title`, `category_id` → 201
+- `PUT /documents/:id` *(genel_merkez)* → 200
+- `PATCH /documents/:id/active` *(genel_merkez)* `{is_active}` → 200
+  — yayından kaldırma; **kayıt silinmez, geçmiş korunur, tekrar yayına alınabilir**.
+- `DELETE /documents/:id` *(genel_merkez)* → 204 — ek satırlarını **ve diskteki dosyaları** siler.
+- `POST /documents/:id/download` — indirme sayacını 1 artırır, dosyayı çekmeden **önce**
+  çağrılır → `{id, download_count, attachments}`. Saha da çağırabilir (yayındaki belgeler için).
+- Dosya ekleme/indirme mevcut `/attachments` uçlarıyla: `entity=documents`, `kind=dokuman`.
+  Bir dokümanın birden çok dosyası olabilir (ör. Word + PDF sürümü).
+- `GET /export/documents.{xlsx|pdf}` — doküman envanteri raporu.
+  Sütunlar: Başlık · Kategori · Kapsam · Sürüm · Yayın Tarihi · Son Geçerlilik · Durum · İndirme Sayısı.
+  Filtreler liste ucuyla aynı (+ `from`/`to` → `published_at`).
+- Tüm yazma işlemleri (`create`, `update`, `active_toggle`, `download`, `delete`) denetim izine düşer.
+
+### 19.5 Diğer notlar
+
+- `category_id` **zorunludur** (arayüz kategori kartlarıyla gezildiği için kategorisiz belge
+  görünmez olurdu). Kullanımdaki bir kategori silinemez → 409 `IN_USE`, pasifleştirilebilir.
+- `valid_until < published_at` → 400.
+- `is_expired` sunucuda `date('now')` ile hesaplanır; istemci tarih karşılaştırması yapmaz.
+
+---
+
 ## Rapor dışa aktarım (Excel + PDF)
 
 `GET /export/{rapor}.{xlsx|pdf}` — `genel_merkez` yetkisi gerekir.
 
 Raporlar: `persons` · `org-units` · `tasks` · `trainings` · `events` · `meetings` ·
-`assignments` · `field-activities` (v1 uyumu için korundu).
+`assignments` · `field-activities` (v1 uyumu için korundu) · `documents` (v2.1).
 
 - Rapor tanımları (sorgu + Türkçe sütunlar) `src/reports.js` içinde tek yerde durur;
   Excel ve PDF aynı tanımı kullandığından iki biçim ayrışamaz.

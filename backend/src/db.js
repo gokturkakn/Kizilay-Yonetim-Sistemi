@@ -10,6 +10,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { DB_PATH } from './config.js';
 import { runMigrations } from './migrations/index.js';
+import { trLower } from './v2.js';
 
 /** Bağlantıyı açar (göç ÇALIŞTIRMAZ). Göç testleri bunu kullanır. */
 export function connect(dbPath = DB_PATH) {
@@ -17,6 +18,8 @@ export function connect(dbPath = DB_PATH) {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // Türkçe büyük/küçük harf duyarsız arama (I/ı, İ/i) — SQLite'ın LIKE'ı yalnız ASCII'de duyarsız.
+  db.function('tr_lower', { deterministic: true }, trLower);
   return db;
 }
 

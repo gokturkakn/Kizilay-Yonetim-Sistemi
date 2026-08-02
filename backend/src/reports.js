@@ -3,7 +3,8 @@
 // Her rapor bir kez tanımlanır: filtreleri, sorgusu ve Türkçe sütun başlıkları.
 // Hem Excel (.xlsx) hem PDF çıktısı aynı tanımı kullanır; böylece iki biçim
 // birbirinden ayrışamaz (bir sütun eklendiğinde ikisinde birden görünür).
-import { badRequest, validDate, toIntOrThrow } from './helpers.js';
+import { badRequest, validDate, toIntOrThrow, parseBoolFlag } from './helpers.js';
+import { trLower } from './v2.js';
 
 const UNIT_TYPE_TR = {
   il_teskilati: 'İl Teşkilatı',
@@ -20,6 +21,9 @@ const ORG_TYPE_TR = {
   ilce_baskanligi: 'İlçe Kadın Başkanlığı',
   temsilcilik: 'Temsilcilik',
 };
+// SPEC-V2-M6 §2.2 — doküman kapsamı.
+const DOC_SCOPES = ['genel', 'bolge', 'il', 'ilce'];
+const DOC_SCOPE_TR = { genel: 'Genel', bolge: 'Bölge', il: 'İl', ilce: 'İlçe' };
 
 /** Ortak coğrafi + tarih filtrelerini WHERE parçalarına çevirir. */
 function geoFilters(q, cols) {
@@ -332,6 +336,54 @@ export const REPORTS = {
         .all(...params);
     },
   },
+
+  // SPEC-V2-M6 §4 — doküman envanteri. "Hangi belge gerçekten kullanılıyor?"
+  // sorusuna İndirme Sayısı sütunuyla cevap verir.
+  documents: {
+    title: 'Doküman Envanteri',
+    filename: 'dokumanlar',
+    columns: [
+      { header: 'Başlık', key: 'title', width: 40 },
+      { header: 'Kategori', key: 'category_name', width: 26 },
+      { header: 'Kapsam', key: 'scope_label', width: 20 },
+      { header: 'Sürüm', key: 'version', width: 16 },
+      { header: 'Yayın Tarihi', key: 'published_at', width: 14 },
+      { header: 'Son Geçerlilik', key: 'valid_until', width: 14 },
+      { header: 'Durum', key: 'status_tr', width: 22 },
+      { header: 'İndirme Sayısı', key: 'download_count', width: 14 },
+    ],
+    build(db, q) {
+      const { where, params } = geoFilters(q, {
+        region: 'd.region_id', province: 'd.province_id', district: 'd.district_id',
+        date: 'd.published_at',
+      });
+      if (q.category_id) {
+        where.push('d.category_id = ?'); params.push(toIntOrThrow(q.category_id, 'category_id'));
+      }
+      if (q.scope) {
+        if (!DOC_SCOPES.includes(q.scope)) throw badRequest('scope filtresi geçersiz');
+        where.push('d.scope = ?'); params.push(q.scope);
+      }
+      const active = parseBoolFlag(q.is_active);
+      if (active !== undefined) { where.push('d.is_active = ?'); params.push(active); }
+      if (q.q) {
+        where.push("(tr_lower(d.title) LIKE ? OR tr_lower(COALESCE(d.description, '')) LIKE ?)");
+        const like = `%${trLower(q.q)}%`;
+        params.push(like, like);
+      }
+      return db.prepare(sql(`
+        SELECT d.*, cat.name AS category_name,
+               COALESCE(di.name, pr.name, rg.name, 'Genel') AS scope_label
+        FROM documents d
+        JOIN lookup_items cat ON cat.id = d.category_id
+        LEFT JOIN regions rg ON rg.id = d.region_id
+        LEFT JOIN provinces pr ON pr.id = d.province_id
+        LEFT JOIN districts di ON di.id = d.district_id`, where,
+      "cat.sort_order, COALESCE(d.published_at, '0000-00-00') DESC, d.id DESC"))
+        .all(...params)
+        .map((d) => ({ ...d, status_tr: d.is_active ? 'Yayında' : 'Yayından Kaldırıldı' }));
+    },
+  },
 };
 
 /** Rapor başlığının altına yazılacak, uygulanan filtreleri özetleyen satır. */
@@ -345,6 +397,9 @@ export function filterSummary(db, q) {
   if (q.from || q.to) parts.push(`Tarih: ${q.from || '…'} — ${q.to || '…'}`);
   if (q.status) parts.push(`Durum: ${PERSON_STATUS_TR[q.status] || ASSIGNMENT_STATUS_TR[q.status] || q.status}`);
   if (q.type) parts.push(`Tür: ${ORG_TYPE_TR[q.type] || q.type}`);
+  // `scope` yalnız doküman raporunda kullanılır; `is_active` raporlar arasında farklı
+  // anlamlara geldiği için (kişide aktiflik, dokümanda yayında olma) burada özetlenmez.
+  if (q.scope) parts.push(`Kapsam: ${DOC_SCOPE_TR[q.scope] || q.scope}`);
   if (q.q) parts.push(`Arama: ${q.q}`);
   return parts.length ? parts.join(' · ') : 'Filtre uygulanmadı (tüm kayıtlar)';
 }

@@ -25,6 +25,8 @@ import calendarRoutes from './routes/calendar.js';
 import contentBlockRoutes from './routes/contentBlocks.js';
 import userRoutes, { selfPasswordRoute } from './routes/users.js';
 import dashboardRoutes from './routes/dashboard.js';
+// --- v2.1 (M6) ---
+import documentRoutes from './routes/documents.js';
 
 export function createApp(db) {
   const app = express();
@@ -103,6 +105,8 @@ export function createApp(db) {
   secured.use(userRoutes(db));
   secured.use(selfPasswordRoute(db));
   secured.use(dashboardRoutes(db));
+  // v2.1 — Kılavuz ve Dokümanlar (SPEC-V2-M6)
+  secured.use(documentRoutes(db));
   api.use(secured);
 
   app.use('/api/v1', api);

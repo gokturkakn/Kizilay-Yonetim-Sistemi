@@ -120,6 +120,19 @@ export function mustExist(db, table, id, message) {
 export const attachmentCountSql = (entity, alias = 't') =>
   `(SELECT COUNT(*) FROM attachments a WHERE a.entity = '${entity}' AND a.entity_id = ${alias}.id) AS attachment_count`;
 
+/**
+ * Türkçe küçük harf katlaması — arama kutuları için.
+ *
+ * SQLite'ın `LIKE` operatörü yalnız ASCII harflerde büyük/küçük harf duyarsızdır:
+ * "KILAVUZ" ile "Kılavuz", "İZİN" ile "izin" eşleşmez. Türkçede ayrıca noktalı/noktasız
+ * i ayrımı vardır (I→ı, İ→i), bu yüzden düz `toLowerCase()` de yetmez.
+ * Bu fonksiyon `tr_lower` adıyla SQLite'a kaydedilir (bkz. src/db.js).
+ */
+export function trLower(value) {
+  if (value === null || value === undefined) return null;
+  return String(value).replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase();
+}
+
 /** Çoklu değer alabilen sorgu parametresi (?status=a&status=b). */
 export function asArray(value) {
   if (value === undefined || value === null || value === '') return [];

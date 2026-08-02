@@ -26,6 +26,7 @@ const USAGE = [
   ['material_requests', 'product_id'], ['shipments', 'shipping_method_id'],
   ['stock_items', 'product_id'], ['stock_movements', 'product_id'],
   ['org_assignments', 'role_id'],
+  ['documents', 'category_id'],
 ];
 
 export default function lookupRoutes(db) {

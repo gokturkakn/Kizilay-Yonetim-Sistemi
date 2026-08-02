@@ -23,6 +23,9 @@ export const LOOKUP_CATEGORIES = [
   { code: 'gonderim_sekli', name: 'Gönderim Şekli' },
   { code: 'gorev_unvani', name: 'Görev / Unvan' },
   { code: 'durum', name: 'Durum' },
+  // SPEC-V2-M6 §2.1 — doküman TÜRÜ. Kapsam (genel/bölge/il/ilçe) ayrı bir eksendir,
+  // kategori değildir; bkz. src/routes/documents.js.
+  { code: 'dokuman_kategorisi', name: 'Doküman Kategorisi' },
 ];
 
 // SPEC-V2 §3.2A — 12 ana görev başlığı.
@@ -125,6 +128,15 @@ export const LOOKUP_ITEMS = {
   ],
 
   durum: ['Aktif', 'Pasif', 'Teşkilat Yok'],
+
+  // SPEC-V2-M6 §2.1 — dört başlangıç kategorisi. Alt kategori gerekirse (ör.
+  // "Proje Dokümanları → Aile Yılı") aynı K1 parent_id altyapısı kullanılır.
+  dokuman_kategorisi: [
+    'Kılavuzlar',
+    'Formlar ve Matbu Belgeler',
+    'Proje Dokümanları',
+    'Yönetsel Dokümanlar',
+  ],
 };
 
 /** kategori kodu → { ebeveyn kalem adı: [alt kalem adları] } */
@@ -140,4 +152,5 @@ export const EXPECTED_ITEM_COUNTS = {
   toplanti_platformu: 5,
   lojistik_urun: 15,
   bolge: 7,
+  dokuman_kategorisi: 4,
 };

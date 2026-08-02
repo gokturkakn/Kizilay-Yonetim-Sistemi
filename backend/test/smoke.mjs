@@ -1,7 +1,7 @@
 // Duman testi: geçici bir SQLite dosyasıyla sunucuyu başlatır ve API sözleşmesini uçtan uca doğrular.
 // Çalıştırma: npm test  (framework gerekmez, sadece Node)
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,9 @@ const BASE = `http://localhost:${PORT}/api/v1`;
 
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'kk-smoke-'));
 const dbPath = path.join(tmpDir, 'smoke.db');
+// Yüklemeler de geçici dizine gider: hem backend/uploads kirlenmez hem de doküman
+// silindiğinde diskte sahipsiz dosya kalmadığı doğrudan doğrulanabilir.
+const uploadDir = path.join(tmpDir, 'uploads');
 
 let passed = 0;
 let failed = 0;
@@ -47,7 +50,10 @@ async function req(method, url, { token, body, raw } = {}) {
 const server = spawn(process.execPath, ['src/server.js'], {
   cwd: BACKEND_DIR,
   // Duman testi demo kayıtları üzerinde çalışır; üretim tohumlaması bunları yüklemez.
-  env: { ...process.env, KK_DB_PATH: dbPath, PORT: String(PORT), KK_SEED_DEMO: '1' },
+  env: {
+    ...process.env,
+    KK_DB_PATH: dbPath, KK_UPLOAD_DIR: uploadDir, PORT: String(PORT), KK_SEED_DEMO: '1',
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverLog = '';
@@ -746,6 +752,306 @@ try {
   }
   check('v2 audit kayıtlarında da changed_by_name dolu',
     v2Audits.json.data.filter((a) => a.entity === 'tasks').every((a) => typeof a.changed_by_name === 'string'));
+
+  // ======================================================================
+  // v2.1 — Modül 6: Kılavuz ve Dokümanlar (SPEC-V2-M6)
+  // ======================================================================
+  console.log('\n[25] v2.1 — dokümanlar');
+
+  // --- Tohum: TÜR ekseni Tanımlar'dan gelir (§2.1) ----------------------
+  const docCats = await req('GET', '/lookups/dokuman_kategorisi?limit=50', { token: admin });
+  check('dokuman_kategorisi tanım kategorisi 4 kalemle tohumlandı',
+    docCats.status === 200 && docCats.json.total === 4, `alınan: ${docCats.json?.total}`);
+  const SPEC_CATS = ['Kılavuzlar', 'Formlar ve Matbu Belgeler', 'Proje Dokümanları', 'Yönetsel Dokümanlar'];
+  check('SPEC-V2-M6 §2.1 kategorileri birebir tohumlandı',
+    SPEC_CATS.every((n) => docCats.json.data.some((i) => i.name === n)),
+    JSON.stringify(docCats.json.data.map((i) => i.name)));
+  const katOf = (name) => docCats.json.data.find((i) => i.name === name).id;
+  const katKilavuz = katOf('Kılavuzlar');
+  const katForm = katOf('Formlar ve Matbu Belgeler');
+  const katProje = katOf('Proje Dokümanları');
+
+  const marmara = regions.json.data.find((r) => r.code === 'marmara');
+  const istanbul = provinces.json.data.find((p) => p.code === 34);
+  const istDistricts = await req('GET', `/provinces/${istanbul.id}/districts?limit=100`, { token: admin });
+  const uskudar = istDistricts.json.data.find((d) => d.name === 'Üsküdar');
+
+  // --- Demo kayıtları ---------------------------------------------------
+  const seededDocs = await req('GET', '/documents?limit=50', { token: admin });
+  check('demo dokümanları yüklendi (≥4)', seededDocs.status === 200 && seededDocs.json.total >= 4,
+    `alınan: ${seededDocs.json?.total}`);
+  check('süresi geçmiş izin belgesi "Süresi doldu" için işaretleniyor (is_expired)',
+    seededDocs.json.data.find((d) => d.title === 'Etkinlik İzin Belgesi Şablonu')?.is_expired === 1);
+
+  // --- Oluşturma: dört kapsamın da GEÇERLİ hâli (§2.2) ------------------
+  const docGenel = await req('POST', '/documents', {
+    token: admin,
+    body: {
+      title: 'Duman Testi Kılavuzu', description: 'Sahada kullanılacak İzin akışı anlatılır.',
+      category_id: katKilavuz, scope: 'genel', version: 'v2.1', published_at: '2026-03-01',
+    },
+  });
+  check('POST /documents genel kapsam 201',
+    docGenel.status === 201 && docGenel.json.id > 0 && docGenel.json.scope === 'genel');
+  check('genel kapsamda coğrafya alanları boş',
+    docGenel.json.region_id === null && docGenel.json.province_id === null && docGenel.json.district_id === null);
+  check('kapsam rozeti "Genel"', docGenel.json.scope_label === 'Genel');
+  check('yeni doküman yayında ve indirme sayacı 0',
+    docGenel.json.is_active === 1 && docGenel.json.download_count === 0);
+  check('kategori adı çözümlendi', docGenel.json.category_name === 'Kılavuzlar');
+  const docGenelId = docGenel.json.id;
+
+  const docBolge = await req('POST', '/documents', {
+    token: admin,
+    body: { title: 'Marmara Bölge Talimatı', category_id: katProje, scope: 'bolge', region_id: marmara.id },
+  });
+  check('POST /documents bölge kapsamı 201',
+    docBolge.status === 201 && docBolge.json.region_id === marmara.id
+    && docBolge.json.province_id === null && docBolge.json.district_id === null);
+  check('bölge kapsam rozeti bölge adını gösteriyor', docBolge.json.scope_label === 'Marmara');
+
+  const docIl = await req('POST', '/documents', {
+    token: admin,
+    body: {
+      title: 'Ankara İzin Belgesi', description: 'İl teşkilatı için matbu belge.',
+      category_id: katForm, scope: 'il', province_id: ankara.id,
+      published_at: '2026-02-01', valid_until: '2026-06-30',
+    },
+  });
+  check('POST /documents il kapsamı 201',
+    docIl.status === 201 && docIl.json.province_id === ankara.id && docIl.json.district_id === null);
+  check('il kapsamında bölge il üzerinden TÜRETİLDİ (tek doğru kaynak)',
+    docIl.json.region_id === icAnadolu.id);
+  check('il kapsam rozeti il adını gösteriyor', docIl.json.scope_label === 'Ankara');
+  check('son geçerliliği geçmiş belge "Süresi doldu" işaretli', docIl.json.is_expired === 1);
+
+  const docIlce = await req('POST', '/documents', {
+    token: admin,
+    body: { title: 'Çankaya Proje Notu', category_id: katProje, scope: 'ilce', district_id: cankaya.id },
+  });
+  check('POST /documents ilçe kapsamı 201',
+    docIlce.status === 201 && docIlce.json.district_id === cankaya.id);
+  check('ilçe kapsamında il ve bölge türetildi',
+    docIlce.json.province_id === ankara.id && docIlce.json.region_id === icAnadolu.id);
+  check('ilçe kapsam rozeti ilçe adını gösteriyor', docIlce.json.scope_label === 'Çankaya');
+
+  // --- Kapsam doğrulaması: GEÇERSİZ hâller 400 + Türkçe mesaj -----------
+  const scopeErr = async (body) => req('POST', '/documents', {
+    token: admin, body: { title: 'Geçersiz', category_id: katKilavuz, ...body },
+  });
+  const genelWithProvince = await scopeErr({ scope: 'genel', province_id: ankara.id });
+  check("kapsam 'genel' iken il gönderilemez (400)",
+    genelWithProvince.status === 400 && /Genel/.test(genelWithProvince.json.error.message),
+    JSON.stringify(genelWithProvince.json));
+  check("kapsam 'genel' iken bölge gönderilemez (400)",
+    (await scopeErr({ scope: 'genel', region_id: marmara.id })).status === 400);
+  check("kapsam 'genel' iken ilçe gönderilemez (400)",
+    (await scopeErr({ scope: 'genel', district_id: cankaya.id })).status === 400);
+
+  const bolgeNoRegion = await scopeErr({ scope: 'bolge' });
+  check("kapsam 'bolge' region_id olmadan reddedilir (400)",
+    bolgeNoRegion.status === 400 && /region_id/.test(bolgeNoRegion.json.error.message),
+    JSON.stringify(bolgeNoRegion.json));
+  check("kapsam 'bolge' iken il gönderilemez (400)",
+    (await scopeErr({ scope: 'bolge', region_id: marmara.id, province_id: ankara.id })).status === 400);
+
+  const ilNoProvince = await scopeErr({ scope: 'il' });
+  check("kapsam 'il' province_id olmadan reddedilir (400)",
+    ilNoProvince.status === 400 && /province_id/.test(ilNoProvince.json.error.message),
+    JSON.stringify(ilNoProvince.json));
+  check("kapsam 'il' iken ilçe gönderilemez (400)",
+    (await scopeErr({ scope: 'il', province_id: ankara.id, district_id: cankaya.id })).status === 400);
+  const wrongRegion = await scopeErr({ scope: 'il', province_id: ankara.id, region_id: marmara.id });
+  check("kapsam 'il' — il ile çelişen bölge reddedilir (400)",
+    wrongRegion.status === 400 && /bölge/i.test(wrongRegion.json.error.message),
+    JSON.stringify(wrongRegion.json));
+
+  const ilceNoDistrict = await scopeErr({ scope: 'ilce', province_id: ankara.id });
+  check("kapsam 'ilce' district_id olmadan reddedilir (400)",
+    ilceNoDistrict.status === 400 && /district_id/.test(ilceNoDistrict.json.error.message),
+    JSON.stringify(ilceNoDistrict.json));
+  const foreignDistrict = await scopeErr({ scope: 'ilce', province_id: ankara.id, district_id: uskudar.id });
+  check("kapsam 'ilce' — ilçe seçilen ile ait değilse reddedilir (400)",
+    foreignDistrict.status === 400 && /İlçe/.test(foreignDistrict.json.error.message),
+    JSON.stringify(foreignDistrict.json));
+  check('tanımsız kapsam değeri reddedilir (400)',
+    (await scopeErr({ scope: 'ulke' })).status === 400);
+
+  check('kategori zorunlu (400)', (await req('POST', '/documents', {
+    token: admin, body: { title: 'Kategorisiz' },
+  })).status === 400);
+  check('yanlış tanım kategorisinden kategori reddedilir (400)', (await req('POST', '/documents', {
+    token: admin, body: { title: 'Yanlış kategori', category_id: kanHizmetleri.id },
+  })).status === 400);
+  check('son geçerlilik yayın tarihinden önce olamaz (400)', (await req('POST', '/documents', {
+    token: admin,
+    body: { title: 'Ters tarih', category_id: katKilavuz, published_at: '2026-05-01', valid_until: '2026-04-01' },
+  })).status === 400);
+
+  // --- Güncelleme -------------------------------------------------------
+  const docUpdated = await req('PUT', `/documents/${docGenelId}`, {
+    token: admin, body: { title: 'Duman Testi Kılavuzu', category_id: katKilavuz, version: 'v2.2' },
+  });
+  check('PUT /documents/:id', docUpdated.status === 200 && docUpdated.json.version === 'v2.2');
+  // Kapsam daraltılırken eski coğrafya alanları TAŞINMAMALI (doğrulama kuralı delinmesin).
+  const narrowed = await req('PUT', `/documents/${docIlce.json.id}`, {
+    token: admin, body: { title: 'Çankaya Proje Notu', category_id: katProje, scope: 'genel' },
+  });
+  check('kapsam genele çekilince eski il/ilçe temizlenir',
+    narrowed.status === 200 && narrowed.json.scope === 'genel'
+    && narrowed.json.province_id === null && narrowed.json.district_id === null
+    && narrowed.json.region_id === null);
+  await req('PUT', `/documents/${docIlce.json.id}`, {
+    token: admin, body: { title: 'Çankaya Proje Notu', category_id: katProje, scope: 'ilce', district_id: cankaya.id },
+  });
+
+  // --- Filtreler --------------------------------------------------------
+  const byCat = await req('GET', `/documents?category_id=${katForm}&limit=50`, { token: admin });
+  check('GET /documents?category_id= filtresi',
+    byCat.status === 200 && byCat.json.total >= 1 && byCat.json.data.every((d) => d.category_id === katForm));
+  const byScope = await req('GET', '/documents?scope=bolge&limit=50', { token: admin });
+  check('GET /documents?scope= filtresi',
+    byScope.status === 200 && byScope.json.total >= 1 && byScope.json.data.every((d) => d.scope === 'bolge'));
+  const docsByRegion = await req('GET', `/documents?region_id=${marmara.id}&limit=50`, { token: admin });
+  check('GET /documents?region_id= filtresi',
+    docsByRegion.json.total >= 1 && docsByRegion.json.data.every((d) => d.region_id === marmara.id));
+  const byProvince = await req('GET', `/documents?province_id=${ankara.id}&limit=50`, { token: admin });
+  check('GET /documents?province_id= filtresi',
+    byProvince.json.total >= 1 && byProvince.json.data.every((d) => d.province_id === ankara.id));
+  const byDistrict = await req('GET', `/documents?district_id=${cankaya.id}&limit=50`, { token: admin });
+  check('GET /documents?district_id= filtresi ("yalnız bana ait olanlar")',
+    byDistrict.json.total >= 1 && byDistrict.json.data.every((d) => d.district_id === cankaya.id));
+  check('geçersiz scope filtresi 400',
+    (await req('GET', '/documents?scope=ulke', { token: admin })).status === 400);
+
+  // Türkçe büyük/küçük harf duyarsız arama (§5.2): KILAVUZ ↔ Kılavuz, İZİN ↔ izin.
+  const qUpper = await req('GET', '/documents?q=KILAVUZU&limit=50', { token: admin });
+  check('?q= Türkçe büyük harf araması başlıkta eşleşiyor (KILAVUZU → Kılavuzu)',
+    qUpper.status === 200 && qUpper.json.data.some((d) => d.id === docGenelId),
+    JSON.stringify(qUpper.json.data.map((d) => d.title)));
+  const qDotted = await req('GET', '/documents?q=kilavuzu&limit=50', { token: admin });
+  check('?q= noktalı i ile noktasız ı ayrımı korunuyor (kilavuzu ≠ kılavuzu)',
+    !qDotted.json.data.some((d) => d.id === docGenelId));
+  const qDesc = await req('GET', '/documents?q=İZİN&limit=50', { token: admin });
+  check('?q= açıklama alanında da arıyor ve İ/i katlaması doğru',
+    qDesc.json.data.some((d) => d.id === docGenelId) && qDesc.json.data.some((d) => d.id === docIl.json.id),
+    JSON.stringify(qDesc.json.data.map((d) => d.title)));
+
+  // --- Yayından kaldırma ve saha görünürlüğü (§4) -----------------------
+  const unpublished = await req('PATCH', `/documents/${docBolge.json.id}/active`, {
+    token: admin, body: { is_active: false },
+  });
+  check('PATCH /documents/:id/active yayından kaldırır',
+    unpublished.status === 200 && unpublished.json.is_active === 0);
+  check('kayıt silinmedi, genel merkez hâlâ görüyor',
+    (await req('GET', `/documents/${docBolge.json.id}`, { token: admin })).status === 200);
+  const adminPassive = await req('GET', '/documents?is_active=0&limit=50', { token: admin });
+  check('genel merkez ?is_active=0 ile yayından kaldırılanları listeleyebiliyor',
+    adminPassive.json.total >= 1 && adminPassive.json.data.every((d) => d.is_active === 0));
+
+  const sahaList = await req('GET', '/documents?limit=100', { token: saha });
+  check('saha listesinde YALNIZ yayındakiler var',
+    sahaList.status === 200 && sahaList.json.data.every((d) => d.is_active === 1));
+  check('yayından kaldırılan doküman saha listesinde YOK',
+    !sahaList.json.data.some((d) => d.id === docBolge.json.id));
+  check('saha demo arşiv belgesini de görmüyor',
+    !sahaList.json.data.some((d) => d.title === '2025 Teşkilatlanma Yönergesi'));
+  check('saha ?is_active=0 göndererek kısıtı AŞAMAZ (sunucu tarafı zorlama)',
+    (await req('GET', '/documents?is_active=0&limit=100', { token: saha })).json.total === 0);
+  check('saha yayından kaldırılmış dokümanı tekil de çekemez (404)',
+    (await req('GET', `/documents/${docBolge.json.id}`, { token: saha })).status === 404);
+  check('saha yayındaki dokümanı okuyabiliyor',
+    (await req('GET', `/documents/${docGenelId}`, { token: saha })).status === 200);
+  await req('PATCH', `/documents/${docBolge.json.id}/active`, { token: admin, body: { is_active: true } });
+
+  // --- İndirme sayacı ---------------------------------------------------
+  const dl1 = await req('POST', `/documents/${docGenelId}/download`, { token: saha });
+  check('POST /documents/:id/download sayacı artırır',
+    dl1.status === 200 && dl1.json.download_count === 1);
+  const dl2 = await req('POST', `/documents/${docGenelId}/download`, { token: admin });
+  check('indirme sayacı üst üste artıyor', dl2.json.download_count === 2);
+  check('sayaç kayıtta kalıcı',
+    (await req('GET', `/documents/${docGenelId}`, { token: admin })).json.download_count === 2);
+  await req('PATCH', `/documents/${docBolge.json.id}/active`, { token: admin, body: { is_active: false } });
+  check('saha yayından kaldırılmış dokümanı indiremez (404)',
+    (await req('POST', `/documents/${docBolge.json.id}/download`, { token: saha })).status === 404);
+  await req('PATCH', `/documents/${docBolge.json.id}/active`, { token: admin, body: { is_active: true } });
+
+  // --- Rol zorlaması ----------------------------------------------------
+  check('saha doküman ekleyemez (403)', (await req('POST', '/documents', {
+    token: saha, body: { title: 'Yetkisiz', category_id: katKilavuz },
+  })).status === 403);
+  check('saha doküman güncelleyemez (403)', (await req('PUT', `/documents/${docGenelId}`, {
+    token: saha, body: { title: 'Yetkisiz', category_id: katKilavuz },
+  })).status === 403);
+  check('saha doküman yayından kaldıramaz (403)',
+    (await req('PATCH', `/documents/${docGenelId}/active`, { token: saha, body: { is_active: false } })).status === 403);
+  check('saha doküman silemez (403)',
+    (await req('DELETE', `/documents/${docGenelId}`, { token: saha })).status === 403);
+
+  // --- Ekler (K5 altyapısı, entity='documents') -------------------------
+  const pdfBytes = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<<>>\n%%EOF\n', 'latin1');
+  const docForm = new FormData();
+  docForm.append('file', new Blob([pdfBytes], { type: 'application/pdf' }), 'gonullu-el-kitabi.pdf');
+  docForm.append('entity', 'documents');
+  docForm.append('entity_id', String(docIl.json.id));
+  docForm.append('kind', 'dokuman');
+  const docUp = await fetch(`${BASE}/attachments`, {
+    method: 'POST', headers: { Authorization: `Bearer ${admin}` }, body: docForm,
+  });
+  const docUpJson = await docUp.json();
+  check('POST /attachments entity=documents 201',
+    docUp.status === 201 && docUpJson.entity === 'documents' && docUpJson.entity_id === docIl.json.id,
+    JSON.stringify(docUpJson));
+  const storedPath = path.join(uploadDir, readdirSync(uploadDir).find((f) => f.endsWith('.pdf')) || 'yok');
+  check('yüklenen dosya diskte var', existsSync(storedPath), storedPath);
+
+  const docWithFiles = await req('GET', `/documents/${docIl.json.id}`, { token: saha });
+  check('GET /documents/:id ekleri birlikte döndürüyor',
+    docWithFiles.json.attachments?.length === 1
+    && docWithFiles.json.attachments[0].file_name === 'gonullu-el-kitabi.pdf'
+    && docWithFiles.json.attachments[0].download_url.endsWith(`/attachments/${docUpJson.id}/download`));
+  check('attachment_count listede de görünüyor', docWithFiles.json.attachment_count === 1);
+
+  const delDoc = await req('DELETE', `/documents/${docIl.json.id}`, { token: admin });
+  check('DELETE /documents/:id 204 (genel_merkez)', delDoc.status === 204);
+  check('doküman silindi (404)',
+    (await req('GET', `/documents/${docIl.json.id}`, { token: admin })).status === 404);
+  check('ek satırları da silindi',
+    (await req('GET', `/attachments?entity=documents&entity_id=${docIl.json.id}`, { token: admin })).json.total === 0);
+  check('ek kaydı tekil olarak da yok (404)',
+    (await req('GET', `/attachments/${docUpJson.id}`, { token: admin })).status === 404);
+  check('diskte sahipsiz dosya kalmadı', !existsSync(storedPath),
+    `kalan dosyalar: ${readdirSync(uploadDir).join(', ')}`);
+
+  // --- Rapor (§4) -------------------------------------------------------
+  const docXlsx = await req('GET', '/export/documents.xlsx', { token: admin, raw: true });
+  const docXlsxBuf = Buffer.from(await docXlsx.arrayBuffer());
+  check('GET /export/documents.xlsx üretiliyor',
+    docXlsx.status === 200 && docXlsxBuf[0] === 0x50 && docXlsxBuf[1] === 0x4b && docXlsxBuf.length > 1000,
+    `durum: ${docXlsx.status}, boyut: ${docXlsxBuf.length}`);
+  const docPdf = await req('GET', '/export/documents.pdf', { token: admin, raw: true });
+  const docPdfBuf = Buffer.from(await docPdf.arrayBuffer());
+  check('GET /export/documents.pdf üretiliyor',
+    docPdf.status === 200 && docPdfBuf.subarray(0, 4).toString('latin1') === '%PDF' && docPdfBuf.length > 1000,
+    `durum: ${docPdf.status}, boyut: ${docPdfBuf.length}`);
+  check('doküman raporu filtreleri uyguluyor',
+    (await req('GET', `/export/documents.pdf?scope=genel&category_id=${katKilavuz}`, { token: admin, raw: true })).status === 200);
+  check('doküman raporu saha için 403',
+    (await req('GET', '/export/documents.xlsx', { token: saha, raw: true })).status === 403);
+
+  // --- Kullanımdaki kategori korunuyor + denetim izi ---------------------
+  check('kullanımdaki doküman kategorisi silinemez (409 IN_USE)',
+    (await req('DELETE', `/lookup-items/${katKilavuz}`, { token: admin })).status === 409);
+  const docAudits = await req('GET', '/audit-logs?entity=documents&limit=200', { token: admin });
+  for (const action of ['create', 'update', 'active_toggle', 'download', 'delete']) {
+    check(`audit: documents ${action} kaydı yazılıyor`,
+      docAudits.json.data.some((a) => a.action === action),
+      `bulunan: ${[...new Set(docAudits.json.data.map((a) => a.action))].join(',')}`);
+  }
+  check('doküman denetim kayıtlarında changed_by_name dolu',
+    docAudits.json.data.length > 0
+    && docAudits.json.data.every((a) => typeof a.changed_by_name === 'string' && a.changed_by_name.length > 0));
 
   console.log('\n[8] Hata gövdesi biçimi');
   const nf = await req('GET', '/persons/999999', { token: admin });

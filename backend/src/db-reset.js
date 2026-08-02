@@ -17,6 +17,7 @@ import { DB_PATH } from './config.js';
 const TRANSACTIONAL_TABLES = [
   'audit_logs',
   'attachments',
+  'documents',
   'stock_movements',
   'shipments',
   'material_requests',

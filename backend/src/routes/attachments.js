@@ -31,6 +31,7 @@ const ENTITIES = {
   material_requests: 'material_requests',
   shipments: 'shipments',
   field_activities: 'field_activities',
+  documents: 'documents', // SPEC-V2-M6: kılavuz/form dosyaları
 };
 
 // MIME → uzantı. Beyaz liste; buradaki dışında hiçbir tür kabul edilmez.
@@ -53,6 +54,28 @@ function safeDisplayName(original) {
   const base = path.basename(String(original || 'dosya'));
   const cleaned = base.replace(/[\u0000-\u001f\u007f/\\"]/g, '_').trim();
   return (cleaned || 'dosya').slice(0, 180);
+}
+
+/** Ek satırının diskteki dosyasını UPLOAD_DIR sınırından çıkmadan siler. */
+function removeStoredFile(storedName) {
+  const filePath = path.join(UPLOAD_DIR, path.basename(storedName));
+  if (path.dirname(path.resolve(filePath)) === path.resolve(UPLOAD_DIR)) {
+    fs.rmSync(filePath, { force: true });
+  }
+}
+
+/**
+ * Bir varlığın TÜM eklerini siler: hem `attachments` satırlarını hem diskteki dosyaları.
+ * Varlık silinirken çağrılır — aksi halde diskte sahipsiz dosyalar birikir.
+ * @returns silinen ek satırları (denetim izine yazmak için)
+ */
+export function deleteAttachmentsFor(db, entity, entityId) {
+  const rows = db.prepare('SELECT * FROM attachments WHERE entity = ? AND entity_id = ?')
+    .all(entity, entityId);
+  if (rows.length === 0) return rows;
+  db.prepare('DELETE FROM attachments WHERE entity = ? AND entity_id = ?').run(entity, entityId);
+  for (const row of rows) removeStoredFile(row.stored_name);
+  return rows;
 }
 
 export default function attachmentRoutes(db) {
@@ -174,11 +197,8 @@ export default function attachmentRoutes(db) {
         throw new ApiError(403, 'FORBIDDEN', 'Yalnız kendi yüklediğiniz eki silebilirsiniz');
       }
       db.prepare('DELETE FROM attachments WHERE id = ?').run(row.id);
-      const filePath = path.join(UPLOAD_DIR, path.basename(row.stored_name));
-      if (path.dirname(path.resolve(filePath)) === path.resolve(UPLOAD_DIR)) {
-        fs.rmSync(filePath, { force: true });
-      }
-      auditLog(db, { entity: 'attachments', entityId: row.id, action: 'delete', changedBy: req.user.id, changes: row });
+      removeStoredFile(row.stored_name);
+      auditLog(db,{ entity: 'attachments', entityId: row.id, action: 'delete', changedBy: req.user.id, changes: row });
       res.status(204).end();
     } catch (e) { next(e); }
   });

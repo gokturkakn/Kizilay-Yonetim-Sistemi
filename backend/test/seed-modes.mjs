@@ -20,7 +20,8 @@ async function seedInto(dbFile, withDemo) {
   const db = await getDb();
   const counts = seedAll(db, { withDemo });
   const transactional = ['persons', 'memberships', 'field_activities', 'meetings', 'assignments',
-    'tasks', 'trainings', 'events', 'org_assignments', 'material_requests', 'shipments', 'attachments']
+    'tasks', 'trainings', 'events', 'org_assignments', 'material_requests', 'shipments', 'attachments',
+    'documents']
     .map((t) => db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c)
     .reduce((a, b) => a + b, 0);
   return { counts, transactional };

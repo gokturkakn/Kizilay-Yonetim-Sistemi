@@ -180,5 +180,49 @@ export function seedV2Demo(db, { adminId, sahaId, personIds }) {
         regionOf(izmir), izmir, brosur, 300, 'talep', personIds[4] ?? null,
         'Eğitim tanıtım broşürü', sahaId);
     }
+
+    // --- Dokümanlar (SPEC-V2-M6) -----------------------------------------
+    // Dört kategoriden birer örnek + dört kapsamdan örnekler; biri bilinçli olarak
+    // yayından kaldırılmış (saha görünürlüğünün doğrulanabilmesi için), biri süresi
+    // dolmuş bir izin belgesi ("Süresi doldu" rozeti gerçek veriyle görünsün).
+    const insDoc = db.prepare(`
+      INSERT INTO documents (title, description, category_id, scope, region_id, province_id,
+        district_id, version, published_at, valid_until, is_active, created_by)
+      VALUES (@title, @description, @category_id, @scope, @region_id, @province_id,
+        @district_id, @version, @published_at, @valid_until, @is_active, @created_by)`);
+    const doc = (o) => {
+      if (!o.category_id) return;
+      insDoc.run({
+        description: null, region_id: null, province_id: null, district_id: null,
+        version: null, published_at: null, valid_until: null, is_active: 1,
+        created_by: adminId, ...o,
+      });
+    };
+    doc({
+      title: 'Gönüllü El Kitabı',
+      description: 'Kızılay Kadın gönüllülerinin görev, sorumluluk ve süreçlerini anlatan temel rehber.',
+      category_id: lookupId('dokuman_kategorisi', 'Kılavuzlar'),
+      scope: 'genel', version: 'v2.1', published_at: '2026-01-15',
+    });
+    doc({
+      title: 'Etkinlik İzin Belgesi Şablonu',
+      description: 'Saha etkinlikleri için doldurulacak matbu izin belgesi.',
+      category_id: lookupId('dokuman_kategorisi', 'Formlar ve Matbu Belgeler'),
+      scope: 'il', region_id: regionOf(ankara), province_id: ankara,
+      version: '2026 Revizyon', published_at: '2026-02-01', valid_until: '2026-06-30',
+    });
+    doc({
+      title: 'Aile Yılı Proje Bilgi Notu',
+      description: 'Aile Yılı kapsamında ilçe teşkilatlarının yürüteceği faaliyetlerin bilgi notu.',
+      category_id: lookupId('dokuman_kategorisi', 'Proje Dokümanları'),
+      scope: 'ilce', region_id: regionOf(ankara), province_id: ankara, district_id: cankaya,
+      version: 'v1.0', published_at: '2026-03-10',
+    });
+    doc({
+      title: '2025 Teşkilatlanma Yönergesi',
+      description: 'Yerini 2026 yönergesine bırakmıştır; arşiv amaçlı saklanmaktadır.',
+      category_id: lookupId('dokuman_kategorisi', 'Yönetsel Dokümanlar'),
+      scope: 'genel', version: '2025', published_at: '2025-01-05', is_active: 0,
+    });
   })();
 }
