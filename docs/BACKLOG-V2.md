@@ -19,14 +19,19 @@ Kaynak: [SPEC-V2.md](SPEC-V2.md) · v1 tabanı: git commit `12cef9f`
 - [x] 79 yeni uç + kullanıcı yönetimi · `docs/API-V2.md`
 - [x] **253 kontrol** (63 göç + 13 tohum + 177 duman), hepsi geçiyor
 - [x] Geriye dönük uyum v1 Flutter uygulamasıyla tarayıcıda doğrulandı
-- [ ] 🔄 Açık kapatma turu: dashboard `district_id`+`activity_type` filtreleri,
-      `/dashboard/timeseries`, `/dashboard/provinces`, PDF çıktıları,
-      `toplanti_platformu` tanımı, toplantı katılımcı sayısı
+- [x] Açık kapatma turu `d9caf03`: dashboard `district_id`+`activity_type` filtreleri,
+      `/dashboard/timeseries` (boş aylar 0 dolgulu), `/dashboard/provinces`,
+      `toplanti_platformu` tanımı, toplantı `participant_count` (migration 011)
+- [x] **268 kontrol** (64 göç + 13 tohum + 191 duman), hepsi geçiyor
+- [ ] **PDF çıktı uçları** — UX-V2 §11/4. Bağımlılıklar kurulu (pdfkit +
+      dejavu-fonts-ttf), uçlar yazılmadı. SPEC-V2 §3.4 "Excel ve PDF çıktıları" diyor.
 
 ## Faz C — Arayüz
 - [x] `docs/UX-V2.md` (UX Architect) `7241716` — 5 sekme + rail/iki panel kırılımları,
       DynamicForm 12 kuralı, üç durumlu statü, 25 belirsizlik çözüldü
-- [ ] 🔄 Flutter v2 uygulaması (Frontend Developer)
+- [ ] **Flutter v2 uygulaması — BAŞLAMADI.** Ajan oturum limitine takılıp düştü
+      (yalnızca v2 model dosyalarına başlamıştı, kod üretilmedi). `app/` hâlâ v1
+      sürümünde ve v2 backend'ine karşı çalışıyor (doğrulandı). En büyük kalan iş.
 
 ## Faz D — Doğrulama
 - [ ] API Tester: v2 uçlarının sözleşmeye uygunluğu
