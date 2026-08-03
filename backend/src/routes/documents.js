@@ -31,9 +31,13 @@ const SCOPE_LABEL = "COALESCE(di.name, pr.name, rg.name, 'Genel') AS scope_label
 // "Süresi doldu" rozeti — son geçerlilik tarihi geçmiş matbu belgeler için.
 const EXPIRED = `CASE WHEN d.valid_until IS NOT NULL AND d.valid_until < date('now')
   THEN 1 ELSE 0 END AS is_expired`;
+// Kapsam darlığı: 1 = en dar (ilçe) … 4 = en geniş (genel).
+// `applicable_to` görünümünde sıralama buna göre yapılır (bkz. aşağıdaki not).
+const SCOPE_RANK = `CASE d.scope WHEN 'ilce' THEN 1 WHEN 'il' THEN 2 WHEN 'bolge' THEN 3
+  ELSE 4 END AS scope_rank`;
 
 const SELECT = `d.id, d.title, d.description, d.category_id, cat.name AS category_name,
-  d.scope, ${SCOPE_LABEL}, d.region_id, d.province_id, d.district_id,
+  d.scope, ${SCOPE_LABEL}, ${SCOPE_RANK}, d.region_id, d.province_id, d.district_id,
   rg.name AS region_name, pr.name AS province_name, di.name AS district_name,
   d.version, d.published_at, d.valid_until, ${EXPIRED},
   d.is_active, d.download_count,
@@ -118,6 +122,63 @@ function resolveScope(db, scope, raw) {
   };
 }
 
+const APPLICABLE_RE = /^(region|province|district):(\d+)$/;
+const APPLICABLE_FORMAT = "'applicable_to' 'region:<id>', 'province:<id>' veya "
+  + "'district:<id>' biçiminde olmalı";
+
+/**
+ * "Bana uygulanan dokümanlar" görünümü.
+ *
+ * Çankaya'daki bir gönüllü kütüphaneyi açtığında kendisini ilgilendiren HER ŞEYİ görmeli:
+ * ülke geneli kılavuz + İç Anadolu genelgesi + Ankara formu + Çankaya belgesi. Bunu
+ * birebir eşleşen filtrelerle (`?province_id=`) kurmak istemciye dört ayrı sorgu yaptırır
+ * ve bir kırılımı unutan istemci belgeyi kaçırır — bu yüzden birleştirme SUNUCUDA yapılır.
+ *
+ * Birebir eşleşen `region_id`/`province_id`/`district_id` filtreleri OLDUĞU GİBİ kalır;
+ * onlar yönetim ekranlarının ve "Yalnız bana ait olanlar" anahtarının kullandığı moddur
+ * (o anahtar `genel` kapsamı HARİÇ tutar, dolayısıyla birebir eşleşme doğrudur).
+ */
+function applicableFilter(db, raw) {
+  const m = APPLICABLE_RE.exec(String(raw).trim());
+  if (!m) throw badRequest(APPLICABLE_FORMAT);
+  const [, level, rawId] = m;
+  const id = Number(rawId);
+
+  if (level === 'region') {
+    if (!db.prepare('SELECT id FROM regions WHERE id = ?').get(id)) {
+      throw badRequest(`applicable_to: bölge bulunamadı (${id})`);
+    }
+    // Bölge/il/ilçe kapsamlarının hepsinde region_id doludur (il üzerinden türetilir),
+    // bu yüzden tek koşul bölgenin altındaki tüm il ve ilçeleri de kapsar.
+    return { sql: "(d.scope = 'genel' OR d.region_id = ?)", params: [id] };
+  }
+
+  if (level === 'province') {
+    const p = db.prepare('SELECT id, region_id FROM provinces WHERE id = ?').get(id);
+    if (!p) throw badRequest(`applicable_to: il bulunamadı (${id})`);
+    // İl düzeyindeki kullanıcı kendi ilçelerine ait belgeleri de görür.
+    return {
+      sql: `(d.scope = 'genel'
+             OR (d.scope = 'bolge' AND d.region_id = ?)
+             OR (d.scope IN ('il', 'ilce') AND d.province_id = ?))`,
+      params: [p.region_id, p.id],
+    };
+  }
+
+  const dis = db.prepare(`
+    SELECT di.id, di.province_id, pr.region_id
+    FROM districts di JOIN provinces pr ON pr.id = di.province_id
+    WHERE di.id = ?`).get(id);
+  if (!dis) throw badRequest(`applicable_to: ilçe bulunamadı (${id})`);
+  return {
+    sql: `(d.scope = 'genel'
+           OR (d.scope = 'bolge' AND d.region_id = ?)
+           OR (d.scope = 'il' AND d.province_id = ?)
+           OR (d.scope = 'ilce' AND d.district_id = ?))`,
+    params: [dis.region_id, dis.province_id, dis.id],
+  };
+}
+
 export default function documentRoutes(db) {
   const r = Router();
   const admin = requireRole('genel_merkez');
@@ -180,6 +241,20 @@ export default function documentRoutes(db) {
     try {
       const where = [];
       const params = [];
+      // İki mod birbirini dışlar: ya birebir eşleşme ya "bana uygulananlar".
+      // Sessizce birini yok saymak yerine açıkça reddedilir.
+      const exactGeo = ['region_id', 'province_id', 'district_id'].filter((k) => req.query[k]);
+      if (req.query.applicable_to && exactGeo.length > 0) {
+        throw badRequest(
+          `'applicable_to' ile ${exactGeo.join('/')} filtresi birlikte kullanılamaz; `
+          + 'ya kapsam eşleşmesi ya da "bana uygulananlar" modunu seçin'
+        );
+      }
+      let applicable = null;
+      if (req.query.applicable_to) {
+        applicable = applicableFilter(db, req.query.applicable_to);
+        where.push(applicable.sql); params.push(...applicable.params);
+      }
       for (const [q, col] of [['category_id', 'd.category_id'], ['region_id', 'd.region_id'],
         ['province_id', 'd.province_id'], ['district_id', 'd.district_id']]) {
         if (req.query[q]) { where.push(`${col} = ?`); params.push(toIntOrThrow(req.query[q], q)); }
@@ -202,9 +277,14 @@ export default function documentRoutes(db) {
       // "yayından kaldırılmış belgeleriniz yok", sessizce yayındakileri göstermek değil.
       if (!isHq(req)) where.push('d.is_active = 1');
 
+      // "Bana uygulananlar" görünümünde EN DARDAN EN GENİŞE sıralanır (ilçe → il → bölge →
+      // genel): kullanıcının konumuna en özel belge en üstte çıkar. Birebir eşleşen listede
+      // tek kapsam olduğu için sıralama yayın tarihine göre kalır (envanter görünümü).
+      const orderBy = applicable
+        ? `scope_rank, COALESCE(d.published_at, '0000-00-00') DESC, d.id DESC`
+        : "COALESCE(d.published_at, '0000-00-00') DESC, d.id DESC";
       res.json(listQuery(db, {
-        select: SELECT, from: FROM, where, params,
-        orderBy: "COALESCE(d.published_at, '0000-00-00') DESC, d.id DESC", query: req.query,
+        select: SELECT, from: FROM, where, params, orderBy, query: req.query,
       }));
     } catch (e) { next(e); }
   });

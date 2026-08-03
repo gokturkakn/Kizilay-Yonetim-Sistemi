@@ -644,6 +644,7 @@ Tohumlanan 4 kategori: **Kılavuzlar · Formlar ve Matbu Belgeler · Proje Dokü
   "category_id": 145, "category_name": "Kılavuzlar",
   "scope": "genel|bolge|il|ilce",
   "scope_label": "Genel",                 // rozet: Genel / <Bölge> / <İl> / <İlçe>
+  "scope_rank": 4,                        // kapsam darlığı: 1=ilçe 2=il 3=bölge 4=genel
   "region_id": null, "province_id": null, "district_id": null,
   "region_name": null, "province_name": null, "district_name": null,
   "version": "v2.1",                      // serbest metin ("2026 Revizyon" da olabilir)
@@ -677,8 +678,8 @@ Tohumlanan 4 kategori: **Kılavuzlar · Formlar ve Matbu Belgeler · Proje Dokü
 
 ### 19.4 Uçlar
 
-- `GET /documents?category_id=&scope=&region_id=&province_id=&district_id=&q=&is_active=`
-  → `{data, total}`
+- `GET /documents?category_id=&scope=&applicable_to=&region_id=&province_id=&district_id=&q=&is_active=`
+  → `{data, total}` — **iki farklı kapsam modu vardır, bkz. §19.4a**
   - `q` başlık **ve** açıklamada arar, **Türkçe büyük/küçük harf duyarsızdır**
     (`I↔ı`, `İ↔i`; SQLite'ın ASCII `LIKE`'ı yetmediği için `tr_lower` işlevi kullanılır).
     Türkçe kuralı gereği noktalı/noktasız i ayrımı **korunur**: `kilavuz` ≠ `kılavuz`.
@@ -700,6 +701,41 @@ Tohumlanan 4 kategori: **Kılavuzlar · Formlar ve Matbu Belgeler · Proje Dokü
   Sütunlar: Başlık · Kategori · Kapsam · Sürüm · Yayın Tarihi · Son Geçerlilik · Durum · İndirme Sayısı.
   Filtreler liste ucuyla aynı (+ `from`/`to` → `published_at`).
 - Tüm yazma işlemleri (`create`, `update`, `active_toggle`, `download`, `delete`) denetim izine düşer.
+
+### 19.4a İki kapsam modu — birebir eşleşme vs. "bana uygulananlar"
+
+Kapsam filtresi iki farklı soruyu cevaplar ve **ikisi aynı anda gönderilemez**
+(gönderilirse 400: *"'applicable_to' ile … filtresi birlikte kullanılamaz"*).
+
+| Mod | Parametre | Soru | Kullanan ekran |
+|---|---|---|---|
+| **Birebir eşleşme** | `region_id` / `province_id` / `district_id` | "Kapsamı tam olarak burası olan belgeler" | Yönetim ekranları · **"Yalnız bana ait olanlar"** anahtarı (`genel` kapsamı **hariç** tutar) |
+| **Bana uygulananlar** | `applicable_to=<düzey>:<id>` | "Buradaki kullanıcıyı ilgilendiren HER ŞEY" | Sahanın varsayılan doküman görünümü |
+
+**Neden sunucuda birleştiriliyor:** Çankaya'daki bir gönüllü kütüphaneyi açtığında ülke
+geneli kılavuzu, İç Anadolu genelgesini, Ankara formunu **ve** Çankaya belgesini birlikte
+görmelidir. Bunu birebir eşleşen filtrelerle kurmak istemciye dört ayrı sorgu yaptırır ve bir
+kırılımı atlayan istemci belgeyi kaçırır — kütüphanenin var oluş sebebine aykırı.
+
+`applicable_to` biçimi: `region:<id>` · `province:<id>` · `district:<id>`.
+Biçim bozuksa veya id bulunamazsa → 400 (Türkçe mesaj).
+
+| Değer | Döndürdüğü kayıtlar |
+|---|---|
+| `district:<id>` | `genel` + ilçenin **bölgesine** ait `bolge` + ilçenin **iline** ait `il` + tam o ilçeye ait `ilce` |
+| `province:<id>` | `genel` + ilin bölgesine ait `bolge` + o il + **ilin tüm ilçeleri** (il düzeyindeki kullanıcı ilçelerininkini de görür) |
+| `region:<id>` | `genel` + o bölge + **bölgedeki tüm il ve ilçeler** |
+
+- `category_id`, `q`, `is_active` ve sayfalama ile serbestçe birleşir.
+- `saha` görünürlük kısıtı bu modda da geçerlidir (yalnız `is_active = 1`).
+
+**Sıralama — `scope_rank` (en dardan en genişe):** `applicable_to` modunda sonuçlar
+`ilce → il → bolge → genel` sırasıyla döner (`scope_rank` 1→4), sonra yayın tarihine göre
+yeniden eskiye. Gerekçe: kullanıcının konumuna **en özel** belge en üstte çıkmalıdır —
+Çankaya'ya özel izin formu, ülke geneli kılavuzun altında kalmamalıdır.
+Birebir eşleşen listede tek bir kapsam olduğundan sıralama yayın tarihine göre kalır
+(envanter görünümü); `scope_rank` alanı yine de her yanıtta döner.
+
 
 ### 19.5 Diğer notlar
 

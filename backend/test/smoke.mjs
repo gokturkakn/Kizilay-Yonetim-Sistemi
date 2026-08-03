@@ -1053,6 +1053,121 @@ try {
     docAudits.json.data.length > 0
     && docAudits.json.data.every((a) => typeof a.changed_by_name === 'string' && a.changed_by_name.length > 0));
 
+  // ======================================================================
+  // v2.1 — "Bana uygulananlar" görünümü (?applicable_to=)
+  // ======================================================================
+  console.log('\n[26] v2.1 — dokümanlar: ?applicable_to= (kapsam birleştirme)');
+
+  // Ölçümü izole etmek için kendi kategorisini kurar: diğer testlerin ve demo
+  // verisinin eklediği belgeler sayımı bozmasın.
+  const kapsamCat = await req('POST', '/lookup-items', {
+    token: admin, body: { category_code: 'dokuman_kategorisi', name: 'Duman Testi Kapsam Kategorisi' },
+  });
+  check('kapsam testi için yeni doküman kategorisi açıldı', kapsamCat.status === 201);
+  const KC = kapsamCat.json.id;
+
+  const konya = provinces.json.data.find((p) => p.code === 42);      // İç Anadolu
+  const kecioren = districts.json.data.find((d) => d.name === 'Keçiören'); // Ankara, Çankaya değil
+  const mkDoc = async (body) => (await req('POST', '/documents', {
+    token: admin, body: { category_id: KC, ...body },
+  })).json.id;
+
+  const aGenel = await mkDoc({ title: 'Kapsam A — ülke geneli kılavuz', scope: 'genel', published_at: '2026-01-01' });
+  const bBolge = await mkDoc({ title: 'Kapsam B — İç Anadolu genelgesi', scope: 'bolge', region_id: icAnadolu.id, published_at: '2026-02-01' });
+  const cIl = await mkDoc({ title: 'Kapsam C — Ankara formu', scope: 'il', province_id: ankara.id, published_at: '2026-03-01' });
+  const dIlce = await mkDoc({ title: 'Kapsam D — Çankaya belgesi', scope: 'ilce', district_id: cankaya.id, published_at: '2026-04-01' });
+  const eYabanci = await mkDoc({ title: 'Kapsam E — İstanbul formu', scope: 'il', province_id: istanbul.id, published_at: '2026-05-01' });
+  const fKecioren = await mkDoc({ title: 'Kapsam F — Keçiören belgesi', scope: 'ilce', district_id: kecioren.id, published_at: '2026-06-01' });
+  const gKonya = await mkDoc({ title: 'Kapsam G — Konya formu', scope: 'il', province_id: konya.id, published_at: '2026-07-01' });
+  check('yedi kapsam örneği oluşturuldu',
+    [aGenel, bBolge, cIl, dIlce, eYabanci, fKecioren, gKonya].every((id) => Number.isInteger(id) && id > 0));
+
+  const applicable = async (target, token = admin, extra = '') =>
+    req('GET', `/documents?applicable_to=${target}&category_id=${KC}&limit=50${extra}`, { token });
+  const idsOf = (r) => r.json.data.map((d) => d.id).sort((a, b) => a - b);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify([...b].sort((x, y) => x - y));
+
+  // --- İlçe düzeyi: Çankaya'daki gönüllü DÖRT kapsamı da görmeli ---------
+  const forDistrict = await applicable(`district:${cankaya.id}`);
+  check('applicable_to=district → genel + bölge + il + ilçe birleşimi (4 kayıt)',
+    forDistrict.status === 200 && forDistrict.json.total === 4
+    && same(idsOf(forDistrict), [aGenel, bBolge, cIl, dIlce]),
+    `alınan: ${JSON.stringify(forDistrict.json.data.map((d) => d.title))}`);
+  check('applicable_to=district başka ilin belgesini DIŞLIYOR',
+    !idsOf(forDistrict).includes(eYabanci));
+  check('applicable_to=district aynı ilin BAŞKA ilçesini dışlıyor',
+    !idsOf(forDistrict).includes(fKecioren));
+  check('applicable_to sonuçları en dardan en genişe sıralı (ilçe → il → bölge → genel)',
+    JSON.stringify(forDistrict.json.data.map((d) => d.scope)) === JSON.stringify(['ilce', 'il', 'bolge', 'genel']),
+    JSON.stringify(forDistrict.json.data.map((d) => d.scope)));
+  check('scope_rank alanı sıralamayı açıklıyor (1..4)',
+    JSON.stringify(forDistrict.json.data.map((d) => d.scope_rank)) === JSON.stringify([1, 2, 3, 4]));
+
+  // --- İl düzeyi: kendi ilçelerinin belgelerini de görür ----------------
+  const forProvince = await applicable(`province:${ankara.id}`);
+  check('applicable_to=province → genel + bölge + il + İLİN TÜM İLÇELERİ (5 kayıt)',
+    forProvince.json.total === 5 && same(idsOf(forProvince), [aGenel, bBolge, cIl, dIlce, fKecioren]),
+    `alınan: ${JSON.stringify(forProvince.json.data.map((d) => d.title))}`);
+  check('applicable_to=province başka ili (İstanbul) ve aynı bölgedeki başka ili (Konya) dışlıyor',
+    !idsOf(forProvince).includes(eYabanci) && !idsOf(forProvince).includes(gKonya));
+
+  // --- Bölge düzeyi: bölgedeki tüm il ve ilçeler -----------------------
+  const forRegion = await applicable(`region:${icAnadolu.id}`);
+  check('applicable_to=region → genel + bölgenin tüm il ve ilçeleri (6 kayıt)',
+    forRegion.json.total === 6 && same(idsOf(forRegion), [aGenel, bBolge, cIl, dIlce, fKecioren, gKonya]),
+    `alınan: ${JSON.stringify(forRegion.json.data.map((d) => d.title))}`);
+  check('applicable_to=region başka bölgenin (Marmara/İstanbul) belgesini dışlıyor',
+    !idsOf(forRegion).includes(eYabanci));
+
+  // --- Diğer filtrelerle birlikte çalışıyor ----------------------------
+  const withQ = await req('GET',
+    `/documents?applicable_to=district:${cankaya.id}&category_id=${KC}&q=ÇANKAYA&limit=50`, { token: admin });
+  check('applicable_to ile q araması birlikte çalışıyor',
+    withQ.json.total === 1 && withQ.json.data[0].id === dIlce,
+    `alınan: ${JSON.stringify(withQ.json.data.map((d) => d.title))}`);
+
+  await req('PATCH', `/documents/${dIlce}/active`, { token: admin, body: { is_active: false } });
+  check('applicable_to + is_active=1 yayından kaldırılanı elemeli',
+    (await applicable(`district:${cankaya.id}`, admin, '&is_active=1')).json.total === 3);
+  check('genel merkez applicable_to ile yayından kaldırılanı da görüyor',
+    (await applicable(`district:${cankaya.id}`)).json.total === 4);
+  const sahaApplicable = await applicable(`district:${cankaya.id}`, saha);
+  check('saha applicable_to modunda da yalnız yayındakileri görüyor',
+    sahaApplicable.json.total === 3 && !idsOf(sahaApplicable).includes(dIlce));
+  await req('PATCH', `/documents/${dIlce}/active`, { token: admin, body: { is_active: true } });
+
+  // --- Hata halleri ----------------------------------------------------
+  const badApplicable = await req('GET', '/documents?applicable_to=ilce-5', { token: admin });
+  check('applicable_to geçersiz biçim 400 + Türkçe mesaj',
+    badApplicable.status === 400 && /applicable_to/.test(badApplicable.json.error.message),
+    JSON.stringify(badApplicable.json));
+  check('applicable_to sayısal olmayan id 400',
+    (await req('GET', '/documents?applicable_to=district:abc', { token: admin })).status === 400);
+  check('applicable_to bilinmeyen düzey adı 400',
+    (await req('GET', '/documents?applicable_to=sehir:6', { token: admin })).status === 400);
+  const unknownDistrict = await req('GET', '/documents?applicable_to=district:999999', { token: admin });
+  check('applicable_to bilinmeyen ilçe 400',
+    unknownDistrict.status === 400 && /ilçe bulunamadı/.test(unknownDistrict.json.error.message),
+    JSON.stringify(unknownDistrict.json));
+  const unknownProvince = await req('GET', '/documents?applicable_to=province:999999', { token: admin });
+  check('applicable_to bilinmeyen il 400',
+    unknownProvince.status === 400 && /il bulunamadı/.test(unknownProvince.json.error.message));
+  const unknownRegion = await req('GET', '/documents?applicable_to=region:999999', { token: admin });
+  check('applicable_to bilinmeyen bölge 400',
+    unknownRegion.status === 400 && /bölge bulunamadı/.test(unknownRegion.json.error.message));
+  const bothModes = await req('GET',
+    `/documents?applicable_to=district:${cankaya.id}&province_id=${ankara.id}`, { token: admin });
+  check('applicable_to + birebir eşleşen kapsam filtresi birlikte 400',
+    bothModes.status === 400 && /applicable_to/.test(bothModes.json.error.message),
+    JSON.stringify(bothModes.json));
+
+  // --- Birebir eşleşen mod DEĞİŞMEDİ ("Yalnız bana ait olanlar") --------
+  const exactDistrict = await req('GET', `/documents?district_id=${cankaya.id}&category_id=${KC}&limit=50`, { token: admin });
+  check('birebir eşleşen district_id filtresi hâlâ YALNIZ ilçe kapsamını döndürüyor',
+    exactDistrict.json.total === 1 && exactDistrict.json.data[0].id === dIlce);
+  check('birebir eşleşen listede scope_rank da dönüyor',
+    exactDistrict.json.data[0].scope_rank === 1);
+
   console.log('\n[8] Hata gövdesi biçimi');
   const nf = await req('GET', '/persons/999999', { token: admin });
   check('404 {error:{code,message}}', nf.status === 404 && typeof nf.json.error?.code === 'string' && typeof nf.json.error?.message === 'string');
