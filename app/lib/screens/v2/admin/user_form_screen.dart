@@ -6,8 +6,10 @@ import '../../../core/validators.dart';
 import '../../../forms/field_spec.dart';
 import '../../../forms/form_controller.dart';
 import '../../../models/models_v2.dart';
+import '../../../theme/tokens.dart';
 import '../../../widgets/common.dart';
 import '../../../widgets/info_block.dart';
+import '../../../widgets/user_avatar.dart';
 import '../shared.dart';
 
 /// E-62 · Kullanıcı Formu — docs/UX-V2.md §6.5.
@@ -148,12 +150,51 @@ class _UserFormScreenState extends State<UserFormScreen> {
     return null;
   }
 
+  /// Düzenlemede başlıkta kullanıcının fotoğrafı (yoksa baş harfleri) durur —
+  /// yönetici kimi düzenlediğini görür. Fotoğrafı **yalnız kullanıcı kendisi**
+  /// değiştirebilir (Profil → E-80), burada salt gösterimdir.
+  Widget? _header() {
+    final u = widget.existing;
+    if (u == null) return null;
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(s16, s16, s16, 0),
+      child: Row(
+        children: [
+          UserAvatar(
+            name: u.name,
+            avatar: u.avatar,
+            loader: context.api2.avatarBytes,
+            radius: 28,
+          ),
+          const SizedBox(width: s16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(u.name, style: theme.textTheme.titleMedium),
+                Text(u.email,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: kTextSecondary)),
+                if (u.avatar == null)
+                  Text(S2.avatarYok,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: kTextDisabled)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FormScaffold(
       title: _isNew ? 'Yeni Kullanıcı' : 'Kullanıcıyı Düzenle',
       controller: _controller,
       onSave: _save,
+      header: _header(),
       // Yöneticiye olmayan bir güvence verilmez (§6.5, API-V2 §11 notu).
       footer: const NoticeCard(text: S2.kapsamUyari),
     );

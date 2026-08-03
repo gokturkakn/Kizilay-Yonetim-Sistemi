@@ -9,7 +9,9 @@ import 'api_client.dart';
 
 /// Oturum durumu: JWT bellekte + shared_preferences'ta saklanır.
 class Session extends ChangeNotifier {
-  Session(this.api);
+  Session(this.api) {
+    _wireCallbacks();
+  }
 
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
@@ -24,6 +26,53 @@ class Session extends ChangeNotifier {
   bool get isLoggedIn => _user != null;
   bool get restored => _restored;
   bool get isAdmin => _user?.isAdmin ?? false;
+
+  /// API-V2 §1.8 — açıkken uygulama kullanıcıyı şifre formunda tutar.
+  bool get mustChangePassword => _user?.mustChangePassword ?? false;
+
+  void _wireCallbacks() {
+    api.client.onUnauthorized = expire;
+    api.client.onPasswordChangeRequired = flagPasswordChangeRequired;
+  }
+
+  /// 403 `PASSWORD_CHANGE_REQUIRED` alan **herhangi** bir istek buraya düşer.
+  ///
+  /// Oturum kapatılmaz: token geçerlidir, yalnız hesap kilitlidir. Bayrak
+  /// kalıcı da yazılır ki uygulama yeniden açıldığında kilit korunsun.
+  void flagPasswordChangeRequired() {
+    final u = _user;
+    if (u == null || u.mustChangePassword) return;
+    _user = u.copyWith(mustChangePassword: true);
+    _persist();
+    notifyListeners();
+  }
+
+  /// Şifre başarıyla değiştirildi — aynı token çalışmaya devam eder (§1.8).
+  void passwordChanged() {
+    final u = _user;
+    if (u == null) return;
+    _user = u.copyWith(mustChangePassword: false);
+    _persist();
+    notifyListeners();
+  }
+
+  /// `PATCH /auth/me` / `GET /auth/me` sonrası oturumdaki kullanıcıyı tazeler.
+  void applyUser(AppUser next) {
+    _user = next;
+    _persist();
+    notifyListeners();
+  }
+
+  Future<void> _persist() async {
+    final u = _user;
+    if (u == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_userKey, jsonEncode(u.toJson()));
+    } catch (_) {
+      // yerel yazma hatası oturumu bozmaz
+    }
+  }
 
   /// Oturum 401 ile düştüyse giriş ekranında snackbar göstermek için.
   bool consumeExpiredNotice() {
@@ -46,7 +95,7 @@ class Session extends ChangeNotifier {
     } catch (_) {
       // bozuk kayıt — oturum yok say
     }
-    api.client.onUnauthorized = () => expire();
+    _wireCallbacks();
     _restored = true;
     notifyListeners();
   }

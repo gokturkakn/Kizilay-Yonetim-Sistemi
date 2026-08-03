@@ -422,4 +422,74 @@ class S2 {
   static const dahaFazlaGoster = 'Daha fazla göster';
   static const dahaAzGoster = 'Daha az göster';
   static const sistemAlanZorunlu = 'Bu alan sistem tarafından zorunlu tutulur.';
+
+  // ---- Profil (E-80) ----
+  static const profilBilgileri = 'Profil Bilgileri';
+  static const profilTeskilat = 'Teşkilat Bilgileri';
+  static const profilAdSoyad = 'Ad Soyad';
+  static const profilEposta = 'E-posta';
+  static const profilTelefon = 'Telefon';
+  static const profilRol = 'Rol';
+  static const profilBolge = 'Bölge';
+  static const profilIl = 'İl';
+  static const profilIlce = 'İlçe';
+  static const profilTumBolgeler = 'Bölge seçilmedi';
+  static const profilTumIller = 'İl seçilmedi';
+  static const profilTumIlceler = 'İlçe seçilmedi';
+  static const profilRolNotu =
+      'Rolünüzü yalnızca genel merkez değiştirebilir.';
+  static const profilTeskilatNotu =
+      'Bölge → İl → İlçe sırasıyla seçilir; üsttekini değiştirdiğinizde '
+      'alttakiler temizlenir.';
+  static const profilKaydedildi = 'Profiliniz güncellendi.';
+  static const profilYuklenemedi =
+      'Profil bilgileri yüklenemedi. Tekrar deneyin.';
+  static const profilUcYok =
+      'Profil düzenleme sunucuda henüz etkin değil. Genel merkez ile '
+      'iletişime geçin.';
+  static const profilKapsamYok = 'Teşkilat bilgisi girilmemiş.';
+  static String profilKapsam(String deger) => 'Kapsam: $deger';
+  static const vTelefonGecersiz =
+      'Geçerli bir telefon numarası girin (05XX XXX XX XX).';
+  static const vEposta = 'Geçerli bir e-posta adresi girin.';
+  static const vEpostaZorunlu = 'E-posta adresi gerekli.';
+
+  // ---- Profil fotoğrafı ----
+  static const avatarBaslik = 'Profil Fotoğrafı';
+  static const avatarSec = 'Fotoğraf Seç';
+  static const avatarDegistir = 'Fotoğrafı Değiştir';
+  static const avatarKaldir = 'Fotoğrafı Kaldır';
+  static const avatarKaldirBaslik = 'Fotoğrafı kaldır';
+  static const avatarKaldirGovde =
+      'Profil fotoğrafınız silinecek. Devam edilsin mi?';
+  static const avatarYukleniyor = 'Fotoğraf yükleniyor...';
+  static const avatarYuklendi = 'Profil fotoğrafı güncellendi.';
+  static const avatarSilindi = 'Profil fotoğrafı kaldırıldı.';
+  static const avatarHataBoyut = 'Fotoğraf boyutu en fazla 2 MB olabilir.';
+  static const avatarHataTur =
+      'Yalnızca JPG, PNG ve WEBP dosyaları yükleyebilirsiniz.';
+  static const avatarHataBos = 'Dosya boş görünüyor. Başka bir dosya seçin.';
+  static const avatarHataSunucu =
+      'Fotoğraf yüklenemedi. Lütfen tekrar deneyin.';
+  static const avatarUcYok =
+      'Profil fotoğrafı sunucuda henüz etkin değil. Genel merkez ile '
+      'iletişime geçin.';
+  static const avatarYok = 'Fotoğraf eklenmemiş.';
+
+  // ---- Şifre değiştirme (E-80 · API-V2 §1.8) ----
+  static const sifreDegistir = 'Şifre Değiştir';
+  static const sifreMevcut = 'Mevcut Şifre';
+  static const sifreYeni = 'Yeni Şifre';
+  static const sifreYeniTekrar = 'Yeni Şifre (Tekrar)';
+  static const sifreKurali =
+      'En az 8 karakter; en az bir harf ve bir rakam içermelidir.';
+  static const vSifreHarfRakam =
+      'Yeni şifre en az bir harf ve bir rakam içermelidir.';
+  static const vSifreAyni = 'Yeni şifre mevcut şifreden farklı olmalıdır.';
+  static const sifreDegistirmeZorunlu =
+      'Devam etmek için şifrenizi değiştirmeniz gerekiyor.';
+  static const sifreZorunluBaslik = 'Şifrenizi Değiştirin';
+  static const sifreZorunluGovde =
+      'Hesabınız ilk girişte şifre değişikliği gerektiriyor. Yeni şifrenizi '
+      'belirlemeden diğer ekranlar açılmaz.';
 }

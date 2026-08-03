@@ -15,19 +15,66 @@ import {
   ApiError, badRequest, conflict, notFound, listQuery, parseBoolFlag,
   requireFields, EMAIL_RE, toIntOrThrow,
 } from '../helpers.js';
-import { optionalInt } from '../v2.js';
+import { optionalInt, optionalText } from '../v2.js';
+import {
+  avatarBody, avatarUpload, clearAvatar, currentAvatar, storeAvatar,
+} from '../avatars.js';
 
 const ROLES = ['genel_merkez', 'saha'];
 const MIN_PASSWORD = 8;
-const SELECT = `u.id, u.name, u.email, u.role, u.region_id, u.province_id, u.district_id,
+// `av` JOIN'i: yönetici listesinde profil fotoğrafı satır başına EK SORGU olmadan gelir
+// (müşteri: "profil resimlerini kullanıcı yönetimi kısmında görebilmeliyim").
+const SELECT = `u.id, u.name, u.email, u.phone, u.title, u.role,
+  u.region_id, u.province_id, u.district_id,
   u.is_active, u.must_change_password,
   rg.name AS region_name, pr.name AS province_name, di.name AS district_name,
+  u.avatar_attachment_id, av.mime AS avatar_mime, av.size AS avatar_size,
+  av.file_name AS avatar_file_name,
   u.created_at, u.updated_at`;
 const FROM = `users u
   LEFT JOIN regions rg ON rg.id = u.region_id
   LEFT JOIN provinces pr ON pr.id = u.province_id
-  LEFT JOIN districts di ON di.id = u.district_id`;
-const FIELDS = ['name', 'email', 'role', 'region_id', 'province_id', 'district_id', 'is_active'];
+  LEFT JOIN districts di ON di.id = u.district_id
+  LEFT JOIN attachments av ON av.id = u.avatar_attachment_id`;
+const FIELDS = ['name', 'email', 'phone', 'title', 'role', 'region_id', 'province_id',
+  'district_id', 'is_active'];
+// Kullanıcının KENDİSİ hakkında değiştirebildiği alanlar (v2.3).
+const SELF_FIELDS = ['name', 'email', 'phone', 'title', 'region_id', 'province_id', 'district_id'];
+
+/**
+ * `PATCH /auth/me` ile ASLA değiştirilemeyecek alanlar.
+ *
+ * Sessizce yok saymak YETMEZ: yok sayılan bir `role: "genel_merkez"` isteği istemciye
+ * 200 döner, kullanıcı kendini yükselttiğini sanır, kayıtlarda hiçbir iz kalmaz ve
+ * denetim sırasında yetki yükseltme denemesi görünmez. Bu yüzden istek 400 ile
+ * REDDEDİLİR ve deneme denetim iznine yazılır (`self_update_rejected`).
+ *
+ * Şifre de buradadır: tek yolu `POST /auth/change-password`'dır ve o uç MEVCUT şifreyi
+ * ister. Profil güncellemesi üzerinden şifre yazılabilseydi, çalınmış bir token'la
+ * şifre değiştirilebilir ve o kontrol delinmiş olurdu.
+ */
+const SELF_FORBIDDEN = [
+  'id', 'role', 'is_active', 'must_change_password',
+  'password', 'new_password', 'password_hash', 'avatar_attachment_id',
+  'created_at', 'updated_at',
+];
+const SECRET_KEYS = new Set(['password', 'new_password', 'password_hash']);
+
+/**
+ * Yanıt gövdesi: yardımcı `avatar_*` sütunları tek bir `avatar` nesnesine katlanır.
+ * Biçim dokümanlardaki `files` alanıyla aynı mantıktadır (kimlik + url + mime + boyut).
+ * Fotoğrafı olmayan kullanıcıda `avatar: null` döner — istemci baş harf rozetine düşer.
+ */
+function withAvatar(row) {
+  if (!row) return row;
+  const { avatar_mime: mime, avatar_size: size, avatar_file_name: fileName, ...rest } = row;
+  return {
+    ...rest,
+    avatar: row.avatar_attachment_id
+      ? avatarBody({ id: row.avatar_attachment_id, mime, size, file_name: fileName })
+      : null,
+  };
+}
 
 /**
  * Şifre gücü (asgari eşik).
@@ -49,11 +96,38 @@ export function checkPassword(value) {
   return pwd;
 }
 
+/**
+ * Telefon — biçimi ZORLANMAZ, yalnız akla yatkınlığı denetlenir.
+ *
+ * Teşkilatta numaralar `0532 111 22 33`, `+90 532 …`, `(0212) …` gibi çok farklı
+ * yazılıyor; katı bir maske kullanıcıyı kendi numarasını giremez hale getirirdi.
+ * Bu yüzden yalnız izinli karakterler ve uzunluk sınırı kontrol edilir.
+ * Boş string ya da `null` gönderilerek alan TEMİZLENEBİLİR.
+ */
+const PHONE_RE = /^[0-9+()\-\s]{7,20}$/;
+
+export function optionalPhone(value) {
+  const text = optionalText(value);
+  if (text === null) return null;
+  if (!PHONE_RE.test(text)) {
+    throw badRequest('Telefon 7–20 karakter olmalı; yalnız rakam, boşluk ve + - ( ) kabul edilir');
+  }
+  return text;
+}
+
+/** Unvan (ör. "İl Başkanı") — serbest metin, yalnız uzunluk sınırlı. */
+export function optionalTitle(value) {
+  const text = optionalText(value);
+  if (text === null) return null;
+  if (text.length > 120) throw badRequest('Unvan en fazla 120 karakter olabilir');
+  return text;
+}
+
 export default function userRoutes(db) {
   const r = Router();
   const admin = requireRole('genel_merkez');
 
-  const getOne = (id) => db.prepare(`SELECT ${SELECT} FROM ${FROM} WHERE u.id = ?`).get(id);
+  const getOne = (id) => withAvatar(db.prepare(`SELECT ${SELECT} FROM ${FROM} WHERE u.id = ?`).get(id));
 
   /**
    * Kapsam doğrulaması: bölge → il → ilçe.
@@ -105,9 +179,10 @@ export default function userRoutes(db) {
       const active = parseBoolFlag(req.query.is_active);
       if (active !== undefined) { where.push('u.is_active = ?'); params.push(active); }
       if (req.query.q) { where.push('(u.name LIKE ? OR u.email LIKE ?)'); params.push(`%${req.query.q}%`, `%${req.query.q}%`); }
-      res.json(listQuery(db, {
+      const result = listQuery(db, {
         select: SELECT, from: FROM, where, params, orderBy: 'u.name', query: req.query,
-      }));
+      });
+      res.json({ ...result, data: result.data.map(withAvatar) });
     } catch (e) { next(e); }
   });
 
@@ -138,10 +213,12 @@ export default function userRoutes(db) {
       const mustChange = parseBoolFlag(b.must_change_password) ?? 1;
 
       const { lastInsertRowid } = db.prepare(`
-        INSERT INTO users (name, email, password_hash, role, region_id, province_id, district_id,
+        INSERT INTO users (name, email, phone, title, password_hash, role,
+                           region_id, province_id, district_id,
                            is_active, must_change_password, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
-        String(b.name).trim(), email, bcrypt.hashSync(password, 10), b.role,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+        String(b.name).trim(), email, optionalPhone(b.phone), optionalTitle(b.title),
+        bcrypt.hashSync(password, 10), b.role,
         scope.region_id, scope.province_id, scope.district_id,
         parseBoolFlag(b.is_active) ?? 1, mustChange
       );
@@ -149,7 +226,8 @@ export default function userRoutes(db) {
       auditLog(db, {
         entity: 'users', entityId: row.id, action: 'create', changedBy: req.user.id,
         changes: {
-          name: row.name, email: row.email, role: row.role, region_id: row.region_id,
+          name: row.name, email: row.email, phone: row.phone, title: row.title,
+          role: row.role, region_id: row.region_id,
           province_id: row.province_id, district_id: row.district_id,
           must_change_password: row.must_change_password,
         },
@@ -177,10 +255,14 @@ export default function userRoutes(db) {
       const scope = validateScope(b, before);
 
       db.prepare(`
-        UPDATE users SET name = ?, email = ?, role = ?, region_id = ?, province_id = ?,
-          district_id = ?, updated_at = datetime('now') WHERE id = ?`).run(
+        UPDATE users SET name = ?, email = ?, phone = ?, title = ?, role = ?,
+          region_id = ?, province_id = ?, district_id = ?,
+          updated_at = datetime('now') WHERE id = ?`).run(
         b.name !== undefined ? String(b.name).trim() : before.name,
-        email, role, scope.region_id, scope.province_id, scope.district_id, before.id
+        email,
+        b.phone !== undefined ? optionalPhone(b.phone) : before.phone,
+        b.title !== undefined ? optionalTitle(b.title) : before.title,
+        role, scope.region_id, scope.province_id, scope.district_id, before.id
       );
       const after = getOne(before.id);
       auditLog(db, {
@@ -235,21 +317,182 @@ export default function userRoutes(db) {
 }
 
 /**
+ * Kendi profilinden teşkilat (bölge/il/ilçe) güncellemesi.
+ *
+ * Yönetici ucundaki `validateScope`'tan FARKLIDIR: burada bölge her zaman
+ * `provinces.region_id` üzerinden TÜRETİLİR (bkz. `v2.js resolveGeo` /
+ * `routes/documents.js resolveScope`'taki aynı kural) — kullanıcı "Ankara / Marmara"
+ * gibi imkânsız bir teşkilat tanımlayamaz. Gönderilmeyen alan DEĞİŞMEZ (diğer
+ * kendi-profil alanlarıyla aynı kısmi güncelleme davranışı); il yoksa (bölge-only ya
+ * da teşkilatsız kapsam) bölge olduğu gibi korunur.
+ */
+function resolveSelfScope(db, body, existing) {
+  const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+
+  const provinceId = has('province_id')
+    ? optionalInt(body.province_id, 'province_id')
+    : (existing.province_id ?? null);
+  if (provinceId !== null && !db.prepare('SELECT id FROM provinces WHERE id = ?').get(provinceId)) {
+    throw badRequest('province_id geçersiz');
+  }
+
+  const districtId = has('district_id')
+    ? optionalInt(body.district_id, 'district_id')
+    : (existing.district_id ?? null);
+  if (districtId !== null) {
+    const dist = db.prepare('SELECT id, province_id FROM districts WHERE id = ?').get(districtId);
+    if (!dist) throw badRequest('district_id geçersiz');
+    if (provinceId === null) {
+      throw badRequest("İlçe kapsamı verebilmek için 'province_id' de gönderilmelidir");
+    }
+    if (dist.province_id !== provinceId) {
+      throw badRequest('İlçe, seçilen ile ait değil');
+    }
+  }
+
+  const derivedRegion = provinceId !== null
+    ? (db.prepare('SELECT region_id FROM provinces WHERE id = ?').get(provinceId)?.region_id ?? null)
+    : null;
+
+  let regionId;
+  if (has('region_id')) {
+    regionId = optionalInt(body.region_id, 'region_id');
+    if (regionId !== null && !db.prepare('SELECT id FROM regions WHERE id = ?').get(regionId)) {
+      throw badRequest('region_id geçersiz');
+    }
+    if (provinceId !== null && regionId !== derivedRegion) {
+      throw badRequest('Seçilen il, gönderilen bölgeye ait değil');
+    }
+  } else {
+    regionId = provinceId !== null ? derivedRegion : (existing.region_id ?? null);
+  }
+
+  return { region_id: regionId, province_id: provinceId, district_id: districtId };
+}
+
+/**
  * Kullanıcının kendisiyle ilgili uçları (rol farketmez).
  *
- * Bu iki uç `must_change_password` kapısının DIŞINDA tutulur (bkz. `src/auth.js`):
- * biri kilidin sebebini gösterir, diğeri kilidi açar.
+ * `GET /auth/me` ve `POST /auth/change-password` `must_change_password` kapısının
+ * DIŞINDA tutulur (bkz. `src/auth.js`): biri kilidin sebebini gösterir, diğeri kilidi
+ * açar. v2.3'te eklenen profil uçları (`PATCH /auth/me`, `/auth/me/avatar`) kapının
+ * İÇİNDEDİR — bayrak açıkken önce şifre değiştirilir, profil sonra düzenlenir.
  */
 export function selfRoutes(db) {
   const r = Router();
+  const readSelf = (id) => withAvatar(db.prepare(`SELECT ${SELECT} FROM ${FROM} WHERE u.id = ?`).get(id));
 
   // Oturumdaki kullanıcı. `must_change_password` açıkken de erişilebilir olmalı;
   // istemci "şifrenizi değiştirin" ekranını buna bakarak açar.
   r.get('/auth/me', (req, res, next) => {
     try {
-      const row = db.prepare(`SELECT ${SELECT} FROM ${FROM} WHERE u.id = ?`).get(req.user.id);
+      const row = readSelf(req.user.id);
       if (!row) throw notFound('Kullanıcı bulunamadı');
       res.json(row);
+    } catch (e) { next(e); }
+  });
+
+  /**
+   * Kendi profilini düzenleme (v2.3 — müşterinin birebir isteği).
+   *
+   * *"her kullanıcı kendi profilini düzenleyebilmeli … şifresinin yanı sıra ismini,
+   * teşkilatını vesaire. Bu konularda esneklik ve özgürlük önemli."*
+   *
+   * Bu yüzden alan listesi CÖMERTTİR: ad, e-posta, telefon, unvan ve teşkilat
+   * (bölge/il/ilçe) kullanıcının kendi tasarrufundadır. Sınır tek bir yerdedir ve
+   * serttir: KİMLİĞİNİ ve YETKİSİNİ kendisi yazamaz (`SELF_FORBIDDEN`).
+   *
+   * Coğrafya doğrulaması dokümanlardaki kuralla aynıdır: ilçe verilirse ili türetilir,
+   * il verilirse bölgesi `provinces.region_id` üzerinden TÜRETİLİR. Gönderilen bölge
+   * türetilenle çelişirse istek reddedilir — kullanıcı "Ankara / Marmara" gibi
+   * imkânsız bir teşkilat tanımlayamaz.
+   */
+  r.patch('/auth/me', (req, res, next) => {
+    try {
+      const b = req.body || {};
+      const before = readSelf(req.user.id);
+      if (!before) throw notFound('Kullanıcı bulunamadı');
+
+      // --- YETKİ SINIRI: sessizce yok saymak yerine AÇIKÇA REDDET -------------
+      const offending = SELF_FORBIDDEN.filter((k) => Object.prototype.hasOwnProperty.call(b, k));
+      if (offending.length > 0) {
+        // Deneme denetim izine yazılır: bir `saha` hesabının kendini `genel_merkez`
+        // yapmaya çalışması sessiz bir 400 olarak kaybolmamalı, GÖRÜNMELİDİR.
+        auditLog(db, {
+          entity: 'users', entityId: before.id, action: 'self_update_rejected',
+          changedBy: req.user.id,
+          changes: {
+            rejected_fields: offending,
+            attempted: Object.fromEntries(offending.map(
+              (k) => [k, SECRET_KEYS.has(k) ? '(gizlendi)' : b[k]]
+            )),
+            current_role: before.role,
+          },
+        });
+        throw new ApiError(400, 'FORBIDDEN_FIELD',
+          `Bu alanlar kendi profilinizden değiştirilemez: ${offending.join(', ')}. `
+          + 'Rol, hesap durumu ve şifre değişikliği bayrağı yalnız genel merkez '
+          + 'tarafından; şifre ise POST /auth/change-password ile değiştirilir.');
+      }
+
+      // --- Alanlar (hepsi opsiyonel; gönderilmeyen alan DEĞİŞMEZ) -------------
+      let name = before.name;
+      if (b.name !== undefined) {
+        name = optionalText(b.name);
+        if (!name) throw badRequest("'name' alanı boş bırakılamaz");
+      }
+
+      let email = before.email;
+      if (b.email !== undefined) {
+        email = String(b.email).trim().toLowerCase();
+        if (!EMAIL_RE.test(email)) throw badRequest('E-posta biçimi geçersiz');
+        // E-posta giriş kimliğidir: benzersizliği burada da zorlanmalı, aksi halde
+        // kullanıcı kendi hesabını başka bir hesabın kimliğiyle çakıştırabilirdi.
+        if (db.prepare('SELECT id FROM users WHERE email = ? AND id <> ?').get(email, before.id)) {
+          throw conflict('Bu e-posta ile kayıtlı bir kullanıcı zaten var');
+        }
+      }
+
+      const phone = b.phone !== undefined ? optionalPhone(b.phone) : before.phone;
+      const title = b.title !== undefined ? optionalTitle(b.title) : before.title;
+      const scope = resolveSelfScope(db, b, before);
+
+      db.prepare(`
+        UPDATE users SET name = ?, email = ?, phone = ?, title = ?,
+          region_id = ?, province_id = ?, district_id = ?, updated_at = datetime('now')
+        WHERE id = ?`).run(
+        name, email, phone, title,
+        scope.region_id, scope.province_id, scope.district_id, before.id
+      );
+      const after = readSelf(before.id);
+      // Her kendi-güncellemesi denetim izine yazılır (müşteri değişikliği kim yaptı
+      // sorusunu kullanıcı yönetiminden de sorabilmeli).
+      auditLog(db, {
+        entity: 'users', entityId: before.id, action: 'self_update', changedBy: req.user.id,
+        changes: diffChanges(before, after, SELF_FIELDS),
+      });
+      res.json(after);
+    } catch (e) { next(e); }
+  });
+
+  // ---------------------------------------------------------------- avatar
+  // Yetki kuralının tam metni `src/avatars.js` başlığındadır. Buradaki iki uç
+  // "kendi" halinin kısayoludur: hedef her zaman oturumdaki kullanıcıdır, dolayısıyla
+  // başkasının fotoğrafına DOKUNULAMAZ (`entity_id` istemciden gelmez).
+  r.post('/auth/me/avatar', avatarUpload(), (req, res, next) => {
+    try {
+      const { attachment } = storeAvatar(db, {
+        targetUserId: req.user.id, file: req.file, actorId: req.user.id,
+      });
+      res.status(201).json({ ...readSelf(req.user.id), avatar: avatarBody(attachment) });
+    } catch (e) { next(e); }
+  });
+
+  r.delete('/auth/me/avatar', (req, res, next) => {
+    try {
+      if (!currentAvatar(db, req.user.id)) throw notFound('Profil fotoğrafı bulunamadı');
+      clearAvatar(db, { targetUserId: req.user.id, actorId: req.user.id });
+      res.json(readSelf(req.user.id));
     } catch (e) { next(e); }
   });
 

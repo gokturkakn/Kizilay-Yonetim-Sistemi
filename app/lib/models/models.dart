@@ -32,9 +32,11 @@ class AppUser {
     required this.name,
     required this.email,
     required this.role,
+    this.phone,
     this.regionId,
     this.provinceId,
     this.districtId,
+    this.mustChangePassword = false,
   });
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
@@ -42,9 +44,11 @@ class AppUser {
         name: json['name']?.toString() ?? '',
         email: json['email']?.toString() ?? '',
         role: json['role']?.toString() ?? '',
+        phone: _asStringOrNull(json['phone']),
         regionId: _asIntOrNull(json['region_id']),
         provinceId: _asIntOrNull(json['province_id']),
         districtId: _asIntOrNull(json['district_id']),
+        mustChangePassword: _asBool(json['must_change_password']),
       );
 
   final int id;
@@ -52,25 +56,58 @@ class AppUser {
   final String email;
   final String role;
 
+  /// Kendi profilinden düzenlenebilir (API-V2 `PATCH /auth/me`).
+  final String? phone;
+
   /// Kullanıcının kapsamı — `POST /auth/login` gövdesinden gelir (API-V2 §11).
   ///
-  /// v2.1'de yalnız `region_id` ve `province_id` sunucuda tutulur; `district_id`
-  /// sözleşmede yer alsa da hep `null` döner. Doküman kütüphanesi bu üçlüyü
-  /// "bana uygulananlar" görünümünde kullanır (SPEC-V2-M6 §4).
+  /// v2.2'de üçü de sunucuda tutulur ve kullanıcı kendi profilinden
+  /// değiştirebilir. Doküman kütüphanesi bu üçlüyü "bana uygulananlar"
+  /// görünümünde kullanır (SPEC-V2-M6 §4).
   final int? regionId;
   final int? provinceId;
   final int? districtId;
 
+  /// API-V2 §1.8 — açıkken uygulama yalnız şifre değiştirme ekranını gösterir.
+  final bool mustChangePassword;
+
   bool get isAdmin => role == 'genel_merkez';
+
+  /// `null` geçilen alanlar korunur; kapsam alanlarını **temizlemek** için
+  /// [clearScope] kullanılır (aksi hâlde `null` "değiştirme" anlamına gelir).
+  AppUser copyWith({
+    String? name,
+    String? email,
+    String? phone,
+    int? regionId,
+    int? provinceId,
+    int? districtId,
+    bool? mustChangePassword,
+    bool clearScope = false,
+    bool clearPhone = false,
+  }) =>
+      AppUser(
+        id: id,
+        name: name ?? this.name,
+        email: email ?? this.email,
+        role: role,
+        phone: clearPhone ? null : (phone ?? this.phone),
+        regionId: clearScope ? regionId : (regionId ?? this.regionId),
+        provinceId: clearScope ? provinceId : (provinceId ?? this.provinceId),
+        districtId: clearScope ? districtId : (districtId ?? this.districtId),
+        mustChangePassword: mustChangePassword ?? this.mustChangePassword,
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
         'email': email,
         'role': role,
+        'phone': phone,
         'region_id': regionId,
         'province_id': provinceId,
         'district_id': districtId,
+        'must_change_password': mustChangePassword,
       };
 }
 

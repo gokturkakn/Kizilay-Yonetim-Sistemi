@@ -59,10 +59,10 @@ servis ayarlarındaki *Environment* bölümünden tanımlanır:
 - Depo herkese açık. `README.md`'de yayımlanmış tohum şifreler canlı sistemde
   çalışıyordu; bu kapatıldı, ancak **canlıdaki mevcut hesapların şifreleri
   değiştirilmelidir.**
-- `backend/.env` bir commit ile depoya girmiş ve push edilmişti; içindeki Neon
-  veritabanı parolası **git geçmişinde ve uzak depoda durmaya devam ediyor.**
-  Dosyayı izlemeden çıkarmak bunu geri almaz — **parola Neon panelinden
-  döndürülmelidir (rotate).**
+- ~~`backend/.env` depoya girmiş ve push edilmişti; içindeki Neon parolası git
+  geçmişinde duruyordu.~~ **Çözüldü (2026-08-03):** Neon projesi silindi, bağlantı
+  adresi artık hiçbir yere gitmiyor. Dosya yine de `.gitignore`'da tutuluyor ki
+  bir sonraki gerçek kimlik bilgisi depoya girmesin.
 - Uygulama `https://` üzerinden çalışıyor (Render sağlıyor), ancak API'de HTTPS
   zorlaması yok; ters vekil arkasında olduğu için pratikte sorun değil.
 

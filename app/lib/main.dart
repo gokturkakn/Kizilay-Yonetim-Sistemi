@@ -11,6 +11,7 @@ import 'core/ref_data.dart';
 import 'core/session.dart';
 import 'core/strings.dart';
 import 'screens/login_screen.dart';
+import 'screens/profile/password_change_screen.dart';
 import 'screens/v2/adaptive_shell.dart';
 import 'theme/app_theme.dart';
 
@@ -87,6 +88,11 @@ class _Root extends StatelessWidget {
     }
     if (!session.isLoggedIn) {
       return const LoginScreen();
+    }
+    // API-V2 §1.8 — bayrak açıkken diğer her uç 403 döner; kullanıcı şifresini
+    // değiştirene kadar uygulamanın kökü şifre formudur.
+    if (session.mustChangePassword) {
+      return const PasswordChangeScreen(forced: true);
     }
     // Kullanıcı değişince iskelet sıfırlanır.
     return AdaptiveShell(key: ValueKey('shell-${session.user!.id}'));

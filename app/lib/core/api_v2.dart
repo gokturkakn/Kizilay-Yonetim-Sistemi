@@ -5,6 +5,7 @@ import '../models/models_v2.dart';
 import 'api_client.dart';
 import 'document_filter.dart';
 import 'filepick/file_pick.dart';
+import 'strings_v2.dart';
 
 /// docs/API-V2.md sözleşmesinin tipli sarmalayıcısı.
 ///
@@ -628,9 +629,109 @@ class ApiV2 {
   Future<void> setUserPassword(int id, String password) =>
       client.put('/users/$id/password', {'password': password});
 
+  Future<UserAccount> user(int id) async {
+    final resp = await client.get('/users/$id');
+    return UserAccount.fromJson((resp as Map).cast<String, dynamic>());
+  }
+
+  // ---- Kendi hesabım (§11 · §1.8) ----
+
+  /// `PATCH /auth/me` gövdesine **asla** konulamayacak alanlar.
+  ///
+  /// Sunucu bunları 400 ile reddeder; istemci hiç göndermez ki yükseltme
+  /// denemesi kaza eseri de olsa yola çıkmasın.
+  static const selfForbiddenKeys = {
+    'role',
+    'is_active',
+    'must_change_password',
+  };
+
+  /// Oturumdaki kullanıcı. `must_change_password` açıkken de çalışır.
+  Future<UserAccount> me() async {
+    final resp = await client.get('/auth/me');
+    return UserAccount.fromJson((resp as Map).cast<String, dynamic>());
+  }
+
+  /// Kendi profilini günceller — `name`, `email`, `phone` ve teşkilat kırılımı.
+  ///
+  /// Yetki alanları gövdeye girerse istek **gönderilmez**: bu bir programlama
+  /// hatasıdır, sunucudan 400 beklemek yerine burada patlar.
+  Future<UserAccount> updateMe(Map<String, dynamic> body) async {
+    final offending =
+        body.keys.where(selfForbiddenKeys.contains).toList(growable: false);
+    if (offending.isNotEmpty) {
+      throw ArgumentError(
+        "'PATCH /auth/me' gövdesine ${offending.join(', ')} konulamaz",
+      );
+    }
+    final resp = await client.patch('/auth/me', body);
+    if (resp is Map) {
+      return UserAccount.fromJson(resp.cast<String, dynamic>());
+    }
+    return me();
+  }
+
+  /// Profil fotoğrafı yükler (yalnız görsel; ~2 MB üst sınır).
+  Future<Avatar?> uploadMyAvatar({
+    required String fileName,
+    required List<int> bytes,
+    String? mime,
+  }) async {
+    final resp = await client.postMultipart('/auth/me/avatar',
+        bytes: bytes,
+        fileName: fileName,
+        contentType: (mime == null || mime.isEmpty)
+            ? AttachmentRules.mimeForFileName(fileName)
+            : mime,
+        fields: const {});
+    if (resp is Map) {
+      final map = resp.cast<String, dynamic>();
+      return Avatar.fromJson(map['avatar']) ?? Avatar.fromJson(map);
+    }
+    return null;
+  }
+
+  Future<void> deleteMyAvatar() => client.delete('/auth/me/avatar');
+
   Future<void> changeOwnPassword(String current, String next) =>
       client.post('/auth/change-password',
           {'current_password': current, 'new_password': next});
+
+  // ---- Profil fotoğrafı baytları ----
+
+  final Map<String, Uint8List?> _avatarBytes = {};
+  final Map<String, Future<Uint8List?>> _avatarInFlight = {};
+
+  /// Fotoğrafı indirir ve oturum boyunca önbellekte tutar.
+  ///
+  /// Liste ekranlarında aynı adres onlarca kez istenebilir; hem başarı hem
+  /// başarısızlık önbelleğe alınır (indirilemeyen görsel için her satırda
+  /// yeniden istek atılmaz). Dönen `null` → baş harf dairesine düşülür.
+  Future<Uint8List?> avatarBytes(String url) {
+    if (url.isEmpty) return Future.value();
+    if (_avatarBytes.containsKey(url)) return Future.value(_avatarBytes[url]);
+    final pending = _avatarInFlight[url];
+    if (pending != null) return pending;
+    final future = () async {
+      try {
+        final data = await client.getBytesUrl(url);
+        _avatarBytes[url] = data.isEmpty ? null : data;
+      } catch (_) {
+        _avatarBytes[url] = null;
+      } finally {
+        _avatarInFlight.remove(url);
+      }
+      return _avatarBytes[url];
+    }();
+    _avatarInFlight[url] = future;
+    return future;
+  }
+
+  /// Fotoğraf değişince (yükleme/silme) önbellek düşürülür.
+  void clearAvatarCache() {
+    _avatarBytes.clear();
+    _avatarInFlight.clear();
+  }
 
   // ---- Kişiler (§13) ----
 
@@ -774,7 +875,26 @@ String v2ErrorMessage(Object error, {String fallback = 'Bir şeyler ters gitti.'
       return 'Kayıt bulunamadı. Silinmiş olabilir.';
     case 'LAST_ADMIN':
       return 'Sistemdeki son genel merkez hesabı pasif yapılamaz.';
+    case 'PASSWORD_CHANGE_REQUIRED':
+      return S2.sifreDegistirmeZorunlu;
     default:
       return error.message.isNotEmpty ? error.message : fallback;
   }
+}
+
+/// Profil fotoğrafı uçlarına özgü hata metni.
+///
+/// Genel [v2ErrorMessage] 10 MB'lık ek sınırını anlatır; avatarda sınır ~2 MB
+/// ve GIF/PDF kabul edilmez, bu yüzden iki kod burada ayrı karşılanır.
+String avatarErrorMessage(Object error) {
+  if (error is ApiException) {
+    if (error.isNotFound) return S2.avatarUcYok;
+    switch (error.code) {
+      case 'FILE_TOO_LARGE':
+        return S2.avatarHataBoyut;
+      case 'UNSUPPORTED_FILE_TYPE':
+        return S2.avatarHataTur;
+    }
+  }
+  return v2ErrorMessage(error, fallback: S2.avatarHataSunucu);
 }

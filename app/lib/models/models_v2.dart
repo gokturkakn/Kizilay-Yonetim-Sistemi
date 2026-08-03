@@ -920,6 +920,45 @@ class ContentBlock {
 // Kullanıcılar — API-V2 §11
 // ---------------------------------------------------------------------------
 
+/// Profil fotoğrafı — `GET /users`, `GET /users/:id` ve `GET /auth/me`
+/// yanıtlarındaki `avatar` nesnesi (yoksa `null`).
+class Avatar {
+  const Avatar({
+    required this.attachmentId,
+    required this.url,
+    this.mime,
+    this.size = 0,
+  });
+
+  /// Sunucu alan adlarında esnektir: `attachment_id`/`id`, `url`/`download_url`.
+  static Avatar? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final j = raw.cast<String, dynamic>();
+    final url = _str(j['url']) ?? _str(j['download_url']);
+    if (url == null) return null;
+    return Avatar(
+      attachmentId: _int(j['attachment_id'] ?? j['id']),
+      url: url,
+      mime: _str(j['mime']),
+      size: _int(j['size']),
+    );
+  }
+
+  final int attachmentId;
+  final String url;
+  final String? mime;
+  final int size;
+
+  /// İzinli profil fotoğrafı türleri — sunucu beyaz listesiyle birebir.
+  static const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+
+  /// Sunucudaki üst sınır (~2 MB).
+  static const maxBytes = 2 * 1024 * 1024;
+
+  static List<String> get accept =>
+      allowedExtensions.map((e) => '.$e').toList();
+}
+
 class UserAccount {
   const UserAccount({
     required this.id,
@@ -927,10 +966,15 @@ class UserAccount {
     required this.email,
     required this.role,
     required this.isActive,
+    this.phone,
     this.regionId,
     this.provinceId,
+    this.districtId,
     this.regionName,
     this.provinceName,
+    this.districtName,
+    this.avatar,
+    this.mustChangePassword = false,
   });
 
   factory UserAccount.fromJson(Map<String, dynamic> j) => UserAccount(
@@ -939,10 +983,15 @@ class UserAccount {
         email: j['email']?.toString() ?? '',
         role: j['role']?.toString() ?? 'saha',
         isActive: _bool(j['is_active'], true),
+        phone: _str(j['phone']),
         regionId: _intOrNull(j['region_id']),
         provinceId: _intOrNull(j['province_id']),
+        districtId: _intOrNull(j['district_id']),
         regionName: _str(j['region_name']),
         provinceName: _str(j['province_name']),
+        districtName: _str(j['district_name']),
+        avatar: Avatar.fromJson(j['avatar']),
+        mustChangePassword: _bool(j['must_change_password']),
       );
 
   final int id;
@@ -950,13 +999,27 @@ class UserAccount {
   final String email;
   final String role;
   final bool isActive;
+  final String? phone;
   final int? regionId;
   final int? provinceId;
+  final int? districtId;
   final String? regionName;
   final String? provinceName;
+  final String? districtName;
+
+  /// Uç henüz yayına alınmamışsa (veya kullanıcı fotoğraf yüklememişse) `null`
+  /// gelir; arayüz baş harf dairesine düşer.
+  final Avatar? avatar;
+  final bool mustChangePassword;
 
   bool get isAdmin => role == 'genel_merkez';
   String get roleLabel => isAdmin ? 'Genel Merkez' : 'Saha';
+
+  /// `Kapsam: {Bölge} / {İl} / {İlçe}` satırı — yalnız dolu olanlar yazılır.
+  String get scopeLabel => [regionName, provinceName, districtName]
+      .whereType<String>()
+      .where((e) => e.isNotEmpty)
+      .join(' / ');
 }
 
 // ---------------------------------------------------------------------------

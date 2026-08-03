@@ -9,6 +9,7 @@ import '../../../core/strings_v2.dart';
 import '../../../models/models_v2.dart';
 import '../../../theme/tokens.dart';
 import '../../../widgets/common.dart';
+import '../../../widgets/user_avatar.dart';
 import '../shared.dart';
 import 'user_form_screen.dart';
 
@@ -203,24 +204,20 @@ class _UserListScreenState extends State<UserListScreen> {
                   : S2.bosKullaniciArama,
               itemBuilder: (context, u) => Card(
                 child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: kPrimaryContainer,
-                    child: Text(
-                      u.name.isEmpty ? '?' : u.name[0].toUpperCase(),
-                      style: const TextStyle(color: kPrimary),
-                    ),
+                  // Fotoğraf varsa gösterilir; yoksa baş harf dairesi (§6.6).
+                  leading: UserAvatar(
+                    name: u.name,
+                    avatar: u.avatar,
+                    loader: context.api2.avatarBytes,
                   ),
                   title: Text(u.name, style: theme.textTheme.titleMedium),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(u.email),
-                      if (u.regionName != null || u.provinceName != null)
+                      if (u.scopeLabel.isNotEmpty)
                         Text(
-                          'Kapsam: ${[
-                            u.regionName,
-                            u.provinceName
-                          ].whereType<String>().join(' / ')}',
+                          S2.profilKapsam(u.scopeLabel),
                           style: theme.textTheme.bodySmall
                               ?.copyWith(color: kTextSecondary),
                         ),

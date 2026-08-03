@@ -19,6 +19,11 @@ class ApiException implements Exception {
   bool get isUnauthorized => statusCode == 401;
   bool get isForbidden => statusCode == 403;
   bool get isConflict => statusCode == 409;
+  bool get isNotFound => statusCode == 404;
+
+  /// API-V2 §1.8 — zorunlu şifre değişikliği bekleyen hesap.
+  bool get isPasswordChangeRequired =>
+      statusCode == 403 && code == 'PASSWORD_CHANGE_REQUIRED';
 
   /// Kullanıcıya gösterilecek genel metin.
   String get displayMessage {
@@ -42,8 +47,16 @@ class ApiClient {
 
   String? token;
 
+  String get baseUrl => _baseUrl;
+
   /// 401 alındığında çağrılır (oturum düşmesi) — HomeShell'e dönüş için.
   VoidCallback? onUnauthorized;
+
+  /// 403 `PASSWORD_CHANGE_REQUIRED` alındığında çağrılır (API-V2 §1.8).
+  ///
+  /// Bayrak açıkken `/auth/me` ve `/auth/change-password` dışındaki **her** uç
+  /// bu hatayı döndürür; uygulama kullanıcıyı şifre formunda tutar.
+  VoidCallback? onPasswordChangeRequired;
 
   Map<String, String> _headers({bool json = true}) => {
         if (json) 'Content-Type': 'application/json',
@@ -54,6 +67,42 @@ class ApiClient {
     final uri = Uri.parse('$_baseUrl$path');
     if (query == null || query.isEmpty) return uri;
     return uri.replace(queryParameters: {...uri.queryParameters, ...query});
+  }
+
+  /// Sunucudan gelen bir adresi (mutlak ya da göreli) çözer.
+  ///
+  /// `avatar.url` sözleşmede biçim garantisi vermez; üç olasılığın üçü de
+  /// desteklenir:
+  /// * `https://host/...`        → olduğu gibi
+  /// * `/api/v1/attachments/...` → köke göre (taban yolu tekrarlanmaz)
+  /// * `/attachments/...`        → API tabanına göre
+  Uri resolveUrl(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return Uri.parse(url);
+    }
+    final base = Uri.parse(_baseUrl);
+    if (url.startsWith('/') &&
+        base.path.isNotEmpty &&
+        base.path != '/' &&
+        url.startsWith(base.path)) {
+      return base.replace(path: url, query: null);
+    }
+    return Uri.parse(url.startsWith('/') ? '$_baseUrl$url' : '$_baseUrl/$url');
+  }
+
+  /// [resolveUrl] ile çözülen adresten ikili içerik indirir (profil fotoğrafı).
+  ///
+  /// `Image.network` yerine bu yol kullanılır: dosya uçları JWT ister ve
+  /// Flutter web'de `Image.network` başlık geçirmez.
+  Future<Uint8List> getBytesUrl(String url) async {
+    http.Response resp;
+    try {
+      resp = await _client.get(resolveUrl(url), headers: _headers(json: false));
+    } catch (_) {
+      throw const ApiException(0, 'network', Str.hataAg);
+    }
+    if (resp.statusCode >= 200 && resp.statusCode < 300) return resp.bodyBytes;
+    throw _errorFrom(resp);
   }
 
   Future<dynamic> get(String path, {Map<String, String>? query}) =>
@@ -168,6 +217,9 @@ class ApiClient {
     final ex = ApiException(resp.statusCode, code, message);
     if (ex.isUnauthorized && token != null) {
       onUnauthorized?.call();
+    }
+    if (ex.isPasswordChangeRequired) {
+      onPasswordChangeRequired?.call();
     }
     return ex;
   }

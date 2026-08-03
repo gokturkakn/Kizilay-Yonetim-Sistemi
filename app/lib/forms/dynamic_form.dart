@@ -586,20 +586,34 @@ class _ReadOnlyField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
+    final helper = spec.helper;
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 2,
-          child: Text(spec.label,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: kTextSecondary)),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 2,
+              child: Text(spec.label,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: kTextSecondary)),
+            ),
+            Expanded(
+              flex: 3,
+              child: Text(controller.stringValue(spec.key) ?? Str.bos,
+                  style: theme.textTheme.bodyLarge),
+            ),
+          ],
         ),
-        Expanded(
-          flex: 3,
-          child: Text(controller.stringValue(spec.key) ?? Str.bos,
-              style: theme.textTheme.bodyLarge),
-        ),
+        // Salt okunur alanın gerekçesi (ör. "Rolünüzü yalnızca genel merkez
+        // değiştirebilir.") alanın hemen altında durur.
+        if (helper != null) ...[
+          const SizedBox(height: s4),
+          Text(helper,
+              style:
+                  theme.textTheme.bodySmall?.copyWith(color: kTextSecondary)),
+        ],
       ],
     );
   }
