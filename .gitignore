@@ -1,3 +1,9 @@
+# Ortam değişkenleri — ASLA depoya girmemeli (veritabanı parolası, JWT anahtarı vb.)
+.env
+.env.*
+!.env.example
+backend/.env
+
 # Bağımlılıklar
 node_modules/
 backend/node_modules/
