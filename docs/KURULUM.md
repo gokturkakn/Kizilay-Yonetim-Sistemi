@@ -77,15 +77,14 @@ npm install
 KK_SEED_DEMO=1 npm start
 ```
 ```bash
-# 2. terminal — arayüz
+# 2. terminal — arayüz (Node.js üzerinden çalışır, ayrıca kurulum istemez)
 cd Kızılay/app
-python3 -m http.server 5757 -d build/web
-```
-Windows'ta Python yoksa ikinci komut yerine:
-```bash
 npx serve build/web -l 5757
 ```
 Sonra tarayıcıdan **http://localhost:5757**
+
+> Python **gerekmez**. `npx serve` Node.js kurulunca zaten elinizde olan bir araçtır
+> (ilk çalıştırmada `serve` paketini otomatik indirir, ayrı kurulum istemez).
 
 > **Dikkat:** Bu yöntemde arkadaşınız **kendi kopyasını** görür; sizin verinizi görmez ve
 > güncel sürüm için her seferinde dosyaları yeniden almanız gerekir. "Her an güncel"
