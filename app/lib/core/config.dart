@@ -5,12 +5,11 @@
 class AppConfig {
   AppConfig._();
 
-  /// REST API taban adresi (bkz. docs/API.md).
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:4141/api/v1',
+    // http://localhost:4141/api/v1
+    defaultValue: 'https://kizilaykadin.onrender.com/api/v1', 
   );
 
-  /// Uygulama sürümü (Profil ekranında gösterilir).
   static const String appVersion = '0.1.0';
 }
