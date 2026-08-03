@@ -77,7 +77,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.brightness_2, size: 56, color: kPrimary),
+                    Image.asset(
+                      'assets/images/kizilay.png',
+                      height: 72,
+                      fit: BoxFit.contain,
+                    ),
                     const SizedBox(height: s16),
                     Text(
                       'Kızılay Kadın',
