@@ -1,38 +1,36 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../core/layout.dart';
-import '../../core/session.dart';
 import '../../core/strings_v2.dart';
 import '../../theme/tokens.dart';
 
 /// E-90 · Daha Fazla — yalnız `< 600` (docs/UX-V2.md §6.6).
+///
+/// İçerik **tek kaynaktan** türetilir: [moreDestinationsForRole], yani alt
+/// çubuğa sığmayan hedeflerin kuyruğu. Böylece 6. modül (Kılavuz ve
+/// Dokümanlar) eklendiğinde `genel_merkez` için burada kendiliğinden belirir
+/// (SPEC-V2-M6 §5.1) ve `saha`'da — doğrudan sekme olduğu için — belirmez.
 class MoreScreen extends StatelessWidget {
-  const MoreScreen({super.key, required this.onOpen});
+  const MoreScreen({super.key, required this.role, required this.onOpen});
 
+  final String role;
   final ValueChanged<AppDestination> onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = context.watch<Session>().isAdmin;
     final theme = Theme.of(context);
+    final destinations = moreDestinationsForRole(role);
     return Scaffold(
       appBar: AppBar(title: const Text(S2.dahaFazla)),
       body: ListView(
         children: [
-          if (isAdmin)
+          for (final d in destinations)
             _MoreRow(
-              icon: Icons.settings_outlined,
-              title: S2.modulYonetim,
-              subtitle: 'Kullanıcılar, tanımlar ve ayarlar',
-              onTap: () => onOpen(AppDestination.yonetim),
+              icon: d.icon,
+              title: d.fullLabel,
+              subtitle: d.moreSubtitle,
+              onTap: () => onOpen(d),
             ),
-          _MoreRow(
-            icon: Icons.person_outline,
-            title: S2.modulProfil,
-            subtitle: 'Hesap bilgileri ve çıkış',
-            onTap: () => onOpen(AppDestination.profil),
-          ),
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.all(s16),

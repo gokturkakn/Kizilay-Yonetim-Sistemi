@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../models/models_v2.dart';
 import 'api_client.dart';
+import 'document_filter.dart';
 
 /// docs/API-V2.md sözleşmesinin tipli sarmalayıcısı.
 ///
@@ -482,17 +483,20 @@ class ApiV2 {
 
   // ---- Ekler (§9) ----
 
+  /// [entityId] boş bırakılırsa bir varlık türünün **tüm** ekleri döner
+  /// (doküman listesinde dosya türü/boyutu tek istekte toplanır — N+1 yok).
   Future<List<Attachment>> attachments({
     required String entity,
-    required int entityId,
+    int? entityId,
     String? kind,
+    int limit = 200,
   }) async {
     final resp = await client.get('/attachments',
         query: _q({
           'entity': entity,
           'entity_id': entityId,
           'kind': kind,
-          'limit': '200',
+          'limit': limit,
         }));
     return PagedRaw.of(resp).rows.map(Attachment.fromJson).toList();
   }
@@ -519,6 +523,60 @@ class ApiV2 {
 
   Future<Uint8List> downloadAttachment(int id) =>
       client.getBytes('/attachments/$id/download');
+
+  // ---- Kılavuz ve Dokümanlar (§19) ----
+
+  /// Doküman listesi — API-V2 §19.4.
+  ///
+  /// [params] **yalnız** [DocumentFilter.params] ile üretilmelidir: iki kapsam
+  /// modunun (`applicable_to` ↔ `region_id`/`province_id`/`district_id`)
+  /// karışmasını orası engeller. Yine de burada bir kez daha doğrulanır —
+  /// sunucuya 400 alacağı bir istek gönderilmez.
+  Future<Paged2<DocumentRecord>> documents(
+    Map<String, Object?> params, {
+    int limit = 200,
+    int offset = 0,
+  }) async {
+    if (DocumentFilter.hasConflict(params)) {
+      throw ArgumentError(
+        "'applicable_to' ile birebir kapsam filtresi birlikte gönderilemez",
+      );
+    }
+    final resp = await client.get('/documents',
+        query: _q({...params, 'limit': limit, 'offset': offset}));
+    final raw = PagedRaw.of(resp);
+    return Paged2(
+      data: raw.rows.map(DocumentRecord.fromJson).toList(),
+      total: raw.total,
+    );
+  }
+
+  Future<DocumentRecord> document(int id) async {
+    final resp = await client.get('/documents/$id');
+    return DocumentRecord.fromJson((resp as Map).cast<String, dynamic>());
+  }
+
+  Future<int> createDocument(Map<String, dynamic> body) async =>
+      _idOf(await client.post('/documents', body));
+
+  Future<void> updateDocument(int id, Map<String, dynamic> body) =>
+      client.put('/documents/$id', body);
+
+  /// Yayından kaldırma / yayına alma — **silme değildir** (§19.4).
+  Future<void> setDocumentActive(int id, bool isActive) =>
+      client.patch('/documents/$id/active', {'is_active': isActive ? 1 : 0});
+
+  Future<void> deleteDocument(int id) => client.delete('/documents/$id');
+
+  /// İndirme sayacını artırır ve güncel ek listesini döner. Dosya **bundan
+  /// sonra** çekilir (§19.4).
+  Future<List<Attachment>> registerDocumentDownload(int id) async {
+    final resp = await client.post('/documents/$id/download', const {});
+    final list = (resp is Map ? resp['attachments'] : null) as List?;
+    return (list ?? const [])
+        .map((e) => Attachment.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
 
   // ---- İçerik blokları (§10) ----
 

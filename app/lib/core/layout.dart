@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
+import 'strings_v2.dart';
 
 /// Ekran genişlik sınıfı — docs/UX-V2.md §1.1.
 ///
@@ -77,7 +78,11 @@ LayoutClass layoutOf(BuildContext context) =>
     layoutClassFor(MediaQuery.sizeOf(context).width);
 
 /// Tek hedef sıralaması, iki görünüm — §2.2.
-enum AppDestination { panel, teskilat, saha, lojistik, yonetim, profil }
+///
+/// `dokuman` (Kılavuz ve Dokümanlar) 6. ana modül olarak eklendi
+/// (SPEC-V2-M6 §5.1). Sıralama **bağlayıcıdır**: alt çubuk ile "Daha Fazla"
+/// bölünmesi bu sıradan türetilir (bkz. [bottomBarPlanForRole]).
+enum AppDestination { panel, teskilat, saha, lojistik, dokuman, yonetim, profil }
 
 /// Alt çubukta görünen sanal giriş (ray düzeninde yoktur).
 const String kMoreDestinationKey = 'daha_fazla';
@@ -94,6 +99,8 @@ extension AppDestinationX on AppDestination {
         return 'Saha';
       case AppDestination.lojistik:
         return 'Lojistik';
+      case AppDestination.dokuman:
+        return 'Dokümanlar';
       case AppDestination.yonetim:
         return 'Yönetim Paneli';
       case AppDestination.profil:
@@ -112,10 +119,26 @@ extension AppDestinationX on AppDestination {
         return 'Saha Faaliyetleri';
       case AppDestination.lojistik:
         return 'Lojistik';
+      case AppDestination.dokuman:
+        return S2.modulDokuman;
       case AppDestination.yonetim:
         return 'Yönetim Paneli';
       case AppDestination.profil:
         return 'Profil';
+    }
+  }
+
+  /// `Daha Fazla` satırındaki alt yazı — E-90 (§6.6).
+  String get moreSubtitle {
+    switch (this) {
+      case AppDestination.dokuman:
+        return 'Kılavuzlar, formlar ve matbu belgeler';
+      case AppDestination.yonetim:
+        return 'Kullanıcılar, tanımlar ve ayarlar';
+      case AppDestination.profil:
+        return 'Hesap bilgileri ve çıkış';
+      default:
+        return fullLabel;
     }
   }
 
@@ -129,6 +152,8 @@ extension AppDestinationX on AppDestination {
         return Icons.volunteer_activism_outlined;
       case AppDestination.lojistik:
         return Icons.local_shipping_outlined;
+      case AppDestination.dokuman:
+        return Icons.menu_book_outlined;
       case AppDestination.yonetim:
         return Icons.settings_outlined;
       case AppDestination.profil:
@@ -146,6 +171,8 @@ extension AppDestinationX on AppDestination {
         return Icons.volunteer_activism;
       case AppDestination.lojistik:
         return Icons.local_shipping;
+      case AppDestination.dokuman:
+        return Icons.menu_book;
       case AppDestination.yonetim:
         return Icons.settings;
       case AppDestination.profil:
@@ -154,14 +181,17 @@ extension AppDestinationX on AppDestination {
   }
 }
 
-/// Role göre görünür hedefler — §8.1.
+/// Role göre görünür hedefler — §8.1 + SPEC-V2-M6 §5.1.
 ///
-/// `genel_merkez`: 6 hedef · `saha`: yalnız Saha · Lojistik · Profil.
+/// `genel_merkez`: 7 hedef · `saha`: Saha · Lojistik · Dokümanlar · Profil.
+/// Kılavuz ve Dokümanlar **her iki rolde de** görünür; saha için okuma ve
+/// indirme, genel merkez için ayrıca yükleme ve yayından kaldırma modülüdür.
 List<AppDestination> destinationsForRole(String role) {
   if (role == 'saha') {
     return const [
       AppDestination.saha,
       AppDestination.lojistik,
+      AppDestination.dokuman,
       AppDestination.profil,
     ];
   }
@@ -172,10 +202,19 @@ List<AppDestination> destinationsForRole(String role) {
 AppDestination initialDestinationForRole(String role) =>
     role == 'saha' ? AppDestination.saha : AppDestination.panel;
 
+/// Alt çubuk en fazla bu kadar öğe taşır — §2.2 (Material `NavigationBar`).
+const int kMaxBottomBarItems = 5;
+
 /// Alt çubukta (`< 600`) render edilecek hedefler — §2.2.
 ///
-/// `genel_merkez`: ilk 4 hedef + sanal `Daha Fazla`.
-/// `saha`: 3 hedefin tamamı, `Daha Fazla` **render edilmez** (§8.1).
+/// Tek kural, rol ayrımı yok: rolün hedefleri alt çubuğa **sığıyorsa** hepsi
+/// sekmedir; sığmıyorsa ilk `kMaxBottomBarItems - 1` hedef sekme olur, kalanı
+/// sanal `Daha Fazla` girişinin altına iner.
+///
+/// * `genel_merkez` (7 hedef): Panel · Teşkilat · Saha · Lojistik + Daha Fazla
+///   (Dokümanlar, Yönetim Paneli, Profil) — SPEC-V2-M6 §5.1.
+/// * `saha` (4 hedef): Saha · Lojistik · Dokümanlar · Profil, `Daha Fazla`
+///   **render edilmez** (§8.1).
 class BottomBarPlan {
   const BottomBarPlan({required this.destinations, required this.hasMore});
 
@@ -187,14 +226,23 @@ class BottomBarPlan {
 
 BottomBarPlan bottomBarPlanForRole(String role) {
   final all = destinationsForRole(role);
-  final inBar =
-      all.where((d) => d != AppDestination.yonetim && d != AppDestination.profil)
-          .toList();
-  if (role == 'saha') {
-    // Profil doğrudan sekmedir; Daha Fazla yok.
+  if (all.length <= kMaxBottomBarItems) {
     return BottomBarPlan(destinations: all, hasMore: false);
   }
-  return BottomBarPlan(destinations: inBar, hasMore: true);
+  return BottomBarPlan(
+    destinations: all.take(kMaxBottomBarItems - 1).toList(growable: false),
+    hasMore: true,
+  );
+}
+
+/// `Daha Fazla` ekranında (E-90) listelenecek hedefler — alt çubuğa sığmayan
+/// kuyruk. Alt çubukta `Daha Fazla` yoksa boş liste döner.
+List<AppDestination> moreDestinationsForRole(String role) {
+  final plan = bottomBarPlanForRole(role);
+  if (!plan.hasMore) return const [];
+  return destinationsForRole(role)
+      .skip(plan.destinations.length)
+      .toList(growable: false);
 }
 
 /// Kırılma noktası geçişi: `< 600` → `>= 600` sırasında `Daha Fazla`

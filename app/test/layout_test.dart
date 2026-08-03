@@ -60,24 +60,27 @@ void main() {
   });
 
   group('§2.2/§8.1 — hedefler ve rol görünürlüğü', () {
-    test('genel_merkez 6 hedef görür', () {
+    // SPEC-V2-M6 §5.1 — Kılavuz ve Dokümanlar 6. ana modül olarak eklendi.
+    test('genel_merkez 7 hedef görür (Dokümanlar dahil)', () {
       final d = destinationsForRole('genel_merkez');
-      expect(d.length, 6);
+      expect(d.length, 7);
       expect(d, [
         AppDestination.panel,
         AppDestination.teskilat,
         AppDestination.saha,
         AppDestination.lojistik,
+        AppDestination.dokuman,
         AppDestination.yonetim,
         AppDestination.profil,
       ]);
     });
 
-    test('saha yalnız 3 hedef görür; Panel ve Teşkilat render edilmez', () {
+    test('saha 4 hedef görür; Panel ve Teşkilat render edilmez', () {
       final d = destinationsForRole('saha');
       expect(d, [
         AppDestination.saha,
         AppDestination.lojistik,
+        AppDestination.dokuman,
         AppDestination.profil,
       ]);
       expect(d.contains(AppDestination.panel), isFalse);
@@ -102,11 +105,46 @@ void main() {
       ]);
     });
 
-    test('saha alt çubuğu 3 sekmelidir ve Daha Fazla render edilmez', () {
+    // SPEC-V2-M6 §5.1 — saha 3 sekmeden 4'e çıkar:
+    // Saha · Lojistik · Dokümanlar · Profil; `Daha Fazla` yine yoktur.
+    test('saha alt çubuğu 4 sekmelidir ve Daha Fazla render edilmez', () {
       final plan = bottomBarPlanForRole('saha');
       expect(plan.hasMore, isFalse);
-      expect(plan.itemCount, 3);
-      expect(plan.destinations.last, AppDestination.profil);
+      expect(plan.itemCount, 4);
+      expect(plan.destinations, [
+        AppDestination.saha,
+        AppDestination.lojistik,
+        AppDestination.dokuman,
+        AppDestination.profil,
+      ]);
+      expect(moreDestinationsForRole('saha'), isEmpty);
+    });
+
+    test('§5.1 — Dokümanlar: saha doğrudan sekme, genel merkez Daha Fazla', () {
+      // saha: alt çubuğun kendisinde, `Daha Fazla` kuyruğunda değil.
+      expect(bottomBarPlanForRole('saha').destinations,
+          contains(AppDestination.dokuman));
+      expect(moreDestinationsForRole('saha'),
+          isNot(contains(AppDestination.dokuman)));
+
+      // genel_merkez: alt çubuğa sığmaz → Yönetim Paneli ve Profil ile birlikte
+      // `Daha Fazla` altına iner.
+      expect(bottomBarPlanForRole('genel_merkez').destinations,
+          isNot(contains(AppDestination.dokuman)));
+      expect(moreDestinationsForRole('genel_merkez'), [
+        AppDestination.dokuman,
+        AppDestination.yonetim,
+        AppDestination.profil,
+      ]);
+    });
+
+    test('§5.1 — >= 600 rayda Dokümanlar her iki rolde tam hedeftir', () {
+      // Ray hedefleri rolün tüm hedefleridir; `Daha Fazla` bölünmesi yoktur.
+      expect(destinationsForRole('saha'), contains(AppDestination.dokuman));
+      expect(
+          destinationsForRole('genel_merkez'), contains(AppDestination.dokuman));
+      expect(AppDestination.dokuman.fullLabel, 'Kılavuz ve Dokümanlar');
+      expect(AppDestination.dokuman.shortLabel, 'Dokümanlar');
     });
 
     test('kırılma noktası geçişinde Daha Fazla kökü hedefe taşınır', () {

@@ -55,6 +55,7 @@ class VisibleWhen {
     this.equalsCode,
     this.inCodes,
     this.equalsValue,
+    this.inValues,
     this.isNotNull = false,
   });
 
@@ -66,6 +67,14 @@ class VisibleWhen {
   const VisibleWhen.value(String key, Object value)
       : this(key: key, equalsValue: value);
 
+  /// Alanın ham değeri listedekilerden biriyse görünür.
+  ///
+  /// Sözleşme sabiti alanlarda (ör. `documents.scope`) değerin kendisi zaten
+  /// koddur; ham değerle karşılaştırmak seçenek listesinin yüklenmiş olmasını
+  /// gerektirmez — liste isteği başarısız olsa bile dal doğru çalışır.
+  const VisibleWhen.anyValue(String key, List<Object> values)
+      : this(key: key, inValues: values);
+
   /// Alan doluysa görünür.
   const VisibleWhen.filled(String key) : this(key: key, isNotNull: true);
 
@@ -73,6 +82,7 @@ class VisibleWhen {
   final String? equalsCode;
   final List<String>? inCodes;
   final Object? equalsValue;
+  final List<Object>? inValues;
   final bool isNotNull;
 }
 

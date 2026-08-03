@@ -5,11 +5,15 @@ import 'package:web/web.dart' as web;
 
 /// Web: blob oluşturup görünmez bir bağlantı ile tarayıcı indirmesini
 /// tetikler.
-Future<String> saveDownloadedFile(Uint8List bytes, String fileName) async {
+Future<String> saveDownloadedFile(
+  Uint8List bytes,
+  String fileName, {
+  String? mimeType,
+}) async {
   final blob = web.Blob(
     [bytes.toJS].toJS,
     web.BlobPropertyBag(
-      type:
+      type: mimeType ??
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ),
   );

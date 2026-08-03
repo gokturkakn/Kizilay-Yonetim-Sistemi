@@ -7,6 +7,7 @@ import '../../theme/tokens.dart';
 import '../profile/profile_screen.dart';
 import 'admin/admin_panel_screen.dart';
 import 'dashboard/dashboard_screen.dart';
+import 'documents/document_home_screen.dart';
 import 'field/field_home_screen_v2.dart';
 import 'logistics/logistics_home_screen.dart';
 import 'more_screen.dart';
@@ -58,6 +59,8 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
         return const FieldHomeScreenV2();
       case AppDestination.lojistik:
         return const LogisticsHomeScreen();
+      case AppDestination.dokuman:
+        return const DocumentHomeScreen();
       case AppDestination.yonetim:
         return const AdminPanelScreen();
       case AppDestination.profil:
@@ -236,7 +239,7 @@ class _AdaptiveShellState extends State<AdaptiveShell> {
               builder: (_) => _rootFor(d),
             ),
           ),
-        MoreScreen(onOpen: _openFromMore),
+        MoreScreen(role: _role, onOpen: _openFromMore),
       ],
     );
   }

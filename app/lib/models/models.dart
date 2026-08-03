@@ -32,6 +32,9 @@ class AppUser {
     required this.name,
     required this.email,
     required this.role,
+    this.regionId,
+    this.provinceId,
+    this.districtId,
   });
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
@@ -39,6 +42,9 @@ class AppUser {
         name: json['name']?.toString() ?? '',
         email: json['email']?.toString() ?? '',
         role: json['role']?.toString() ?? '',
+        regionId: _asIntOrNull(json['region_id']),
+        provinceId: _asIntOrNull(json['province_id']),
+        districtId: _asIntOrNull(json['district_id']),
       );
 
   final int id;
@@ -46,10 +52,26 @@ class AppUser {
   final String email;
   final String role;
 
+  /// Kullanıcının kapsamı — `POST /auth/login` gövdesinden gelir (API-V2 §11).
+  ///
+  /// v2.1'de yalnız `region_id` ve `province_id` sunucuda tutulur; `district_id`
+  /// sözleşmede yer alsa da hep `null` döner. Doküman kütüphanesi bu üçlüyü
+  /// "bana uygulananlar" görünümünde kullanır (SPEC-V2-M6 §4).
+  final int? regionId;
+  final int? provinceId;
+  final int? districtId;
+
   bool get isAdmin => role == 'genel_merkez';
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'name': name, 'email': email, 'role': role};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'email': email,
+        'role': role,
+        'region_id': regionId,
+        'province_id': provinceId,
+        'district_id': districtId,
+      };
 }
 
 class Province {

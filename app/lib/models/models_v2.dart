@@ -1,6 +1,8 @@
 /// v2 veri modelleri — docs/API-V2.md sözleşmesine göre.
 library;
 
+import '../core/strings_v2.dart';
+
 int _int(dynamic v, [int fallback = 0]) {
   if (v is int) return v;
   if (v is num) return v.toInt();
@@ -1227,4 +1229,126 @@ class ProvinceBreakdown {
   final int activityCount;
 
   int get total => aktif + pasif + teskilatYok;
+}
+
+// ---------------------------------------------------------------------------
+// Kılavuz ve Dokümanlar — API-V2 §19 (SPEC-V2-M6)
+// ---------------------------------------------------------------------------
+
+/// Doküman kapsamı — `documents.scope` (API-V2 §19.3, CHECK ile zorlanır).
+///
+/// Bu liste **Tanımlar'dan gelmez**: sözleşme sabiti bir enum'dır, sunucu
+/// listedekiler dışında bir değeri 400 ile reddeder. R4'ün "kodda sabit liste
+/// yasağı" Tanımlar'dan yönetilen listeler içindir; kapsam onlardan biri değil.
+class DocumentScope {
+  const DocumentScope._();
+
+  static const genel = 'genel';
+  static const bolge = 'bolge';
+  static const il = 'il';
+  static const ilce = 'ilce';
+
+  static const all = [genel, bolge, il, ilce];
+
+  /// Filtre çipi / form seçeneği etiketi (SPEC-V2-M6 §5.3 kapsam rozetleri).
+  static String label(String scope) {
+    switch (scope) {
+      case bolge:
+        return S2.dokKapsamBolge;
+      case il:
+        return S2.dokKapsamIl;
+      case ilce:
+        return S2.dokKapsamIlce;
+      default:
+        return S2.dokKapsamGenel;
+    }
+  }
+}
+
+/// Doküman kaydı — API-V2 §19.2.
+///
+/// `scopeLabel`, `isExpired` ve `attachmentCount` **sunucuda** hesaplanır;
+/// istemci bunları yeniden türetmez (§19.5).
+class DocumentRecord {
+  const DocumentRecord({
+    required this.id,
+    required this.title,
+    required this.categoryId,
+    required this.scope,
+    required this.scopeLabel,
+    required this.isExpired,
+    required this.isActive,
+    required this.downloadCount,
+    required this.attachmentCount,
+    this.description,
+    this.categoryName,
+    this.regionId,
+    this.provinceId,
+    this.districtId,
+    this.regionName,
+    this.provinceName,
+    this.districtName,
+    this.version,
+    this.publishedAt,
+    this.validUntil,
+    this.createdByName,
+    this.attachments = const [],
+  });
+
+  factory DocumentRecord.fromJson(Map<String, dynamic> j) => DocumentRecord(
+        id: _int(j['id']),
+        title: j['title']?.toString() ?? '',
+        description: _str(j['description']),
+        categoryId: _int(j['category_id']),
+        categoryName: _str(j['category_name']),
+        scope: j['scope']?.toString() ?? DocumentScope.genel,
+        scopeLabel: j['scope_label']?.toString() ?? S2.dokKapsamGenel,
+        regionId: _intOrNull(j['region_id']),
+        provinceId: _intOrNull(j['province_id']),
+        districtId: _intOrNull(j['district_id']),
+        regionName: _str(j['region_name']),
+        provinceName: _str(j['province_name']),
+        districtName: _str(j['district_name']),
+        version: _str(j['version']),
+        publishedAt: _str(j['published_at']),
+        validUntil: _str(j['valid_until']),
+        isExpired: _bool(j['is_expired']),
+        isActive: _bool(j['is_active'], true),
+        downloadCount: _int(j['download_count']),
+        attachmentCount: _int(j['attachment_count']),
+        createdByName: _str(j['created_by_name']),
+        attachments: (j['attachments'] as List?)
+                ?.map((e) => Attachment.fromJson((e as Map).cast<String, dynamic>()))
+                .toList() ??
+            const [],
+      );
+
+  final int id;
+  final String title;
+  final String? description;
+  final int categoryId;
+  final String? categoryName;
+  final String scope;
+
+  /// Rozet metni: `Genel` / `<Bölge adı>` / `<İl adı>` / `<İlçe adı>`.
+  final String scopeLabel;
+  final int? regionId;
+  final int? provinceId;
+  final int? districtId;
+  final String? regionName;
+  final String? provinceName;
+  final String? districtName;
+  final String? version;
+  final String? publishedAt;
+  final String? validUntil;
+
+  /// `valid_until` geçmiş → "Süresi doldu" rozeti (sunucuda `date('now')`).
+  final bool isExpired;
+  final bool isActive;
+  final int downloadCount;
+  final int attachmentCount;
+  final String? createdByName;
+
+  /// Yalnız `GET /documents/:id` gövdesinde dolu gelir.
+  final List<Attachment> attachments;
 }

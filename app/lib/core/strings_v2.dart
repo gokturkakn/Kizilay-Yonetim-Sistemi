@@ -60,6 +60,67 @@ class S2 {
   static const modulLojistik = 'Lojistik';
   static const modulYonetim = 'Yönetim Paneli';
   static const modulProfil = 'Profil';
+  static const modulDokuman = 'Kılavuz ve Dokümanlar';
+
+  // ---- Modül 6 · Kılavuz ve Dokümanlar (SPEC-V2-M6 §5.3 — aynen) ----
+  static const dokBosKategori = 'Bu kategoride henüz doküman yok.';
+  static const dokBosSaha = 'Genel merkez doküman eklediğinde burada görünecek.';
+  static const dokSuresiDoldu = 'Süresi doldu';
+  static const dokKapsamGenel = 'Genel';
+  static const dokIndirildi = 'Dosya indirildi.';
+  static const dokYayindanKaldirGovde =
+      'Bu doküman sahada görünmeyecek. Kayıt silinmez, tekrar yayına alınabilir. '
+      'Devam edilsin mi?';
+
+  // Ekran metinleri (SPEC-V2-M6 §5.1/§5.2 ve UX-V2 sözlüğü ile uyumlu).
+  static const dokYalnizBana = 'Yalnız bana ait olanlar';
+  static const dokAramaIpucu = 'Doküman ara...';
+  static const dokYayindanKaldir = 'Yayından Kaldır';
+  static const dokYayinaAl = 'Yayına Al';
+  static const dokYayindanKaldirBaslik = 'Yayından kaldır';
+  static const dokYayindanKaldirildi = 'Doküman yayından kaldırıldı.';
+  static const dokYayinaAlindi = 'Doküman yayına alındı.';
+  static const dokKaydedildi = 'Doküman kaydedildi.';
+  static const dokYeni = 'Yeni Doküman';
+  static const dokDuzenle = 'Dokümanı Düzenle';
+  static const dokSilBaslik = 'Doküman silinsin mi?';
+  static const dokKapsamBolge = 'Bölge';
+  static const dokKapsamIl = 'İl';
+  static const dokKapsamIlce = 'İlçe';
+  static const dokSurum = 'Sürüm';
+  static const dokYayinTarihi = 'Yayın Tarihi';
+  static const dokSonGecerlilik = 'Son Geçerlilik';
+  static const dokKategori = 'Kategori';
+  static const dokKapsam = 'Kapsam';
+  static const dokBaslik = 'Başlık';
+  static const dokAciklama = 'Açıklama';
+  static const dokBilgileri = 'Doküman Bilgileri';
+  static const dokKapsamBilgileri = 'Kapsam Bilgileri';
+  static const dokIndirmeSayisi = 'İndirme sayısı';
+  static String dokDosyaSayisi(int n) => '$n dosya';
+  static const dokYalnizBanaAlt =
+      'Yalnız kendi kırılımınıza ait belgeler; ülke geneli belgeler gizlenir.';
+  static const dokDosyaYok = 'Dosya eklenmemiş';
+  static const dokYayindaDegil = 'Yayında değil';
+  static const dokIndir = 'İndir';
+  static const dokTumu = 'Tüm Dokümanlar';
+  static const dokAramaBaslik = 'Doküman Ara';
+  static const dokAramaBos = 'Aramanızla eşleşen doküman bulunamadı.';
+  static const dokAramaIpucuAlt = 'Başlık ve açıklama içinde aranır.';
+  static const dokBosGenel = 'Henüz doküman yok.';
+  static const dokKapsamTumu = 'Tümü';
+  static const dokDosyaTuru = 'Dosya türü';
+  static const dokTumTurler = 'Tüm Türler';
+  static const dokAciklamaYok = 'Açıklama girilmemiş.';
+  static const dokEkler = 'Ekli Dosyalar';
+  static const dokKategoriler = 'Kategoriler';
+  static String dokBelgeSayisi(int n) => '$n belge';
+  static const vDokKategori = 'Kategori seçin.';
+  static const vDokKapsam = 'Kapsam seçin.';
+  static const vDokBaslik = 'Başlık girin.';
+  static const vDokBolge = 'Bölge seçin.';
+  static const vDokIl = 'İl seçin.';
+  static const vDokIlce = 'İlçe seçin.';
 
   // ---- 9.4 Dinamik form ----
   static String onceSecin(String alan) => 'Önce $alan seçin.';

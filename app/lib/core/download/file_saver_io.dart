@@ -2,7 +2,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 /// Mobil/masaüstü: geçici dizine kaydeder ve işletim sistemiyle açmayı dener.
-Future<String> saveDownloadedFile(Uint8List bytes, String fileName) async {
+Future<String> saveDownloadedFile(
+  Uint8List bytes,
+  String fileName, {
+  String? mimeType, // yerel dosyada tür uzantıdan okunur; imzayı web ile eşler
+}) async {
   final dir = Directory.systemTemp;
   final file = File('${dir.path}${Platform.pathSeparator}$fileName');
   await file.writeAsBytes(bytes, flush: true);

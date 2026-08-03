@@ -152,6 +152,8 @@ class FormController extends ChangeNotifier {
     final raw = _values[cond.key];
     if (cond.isNotNull) return raw != null && raw.toString().isNotEmpty;
     if (cond.equalsValue != null) return raw == cond.equalsValue;
+    final rawList = cond.inValues;
+    if (rawList != null) return raw != null && rawList.contains(raw);
     final code = codeOf(cond.key);
     if (cond.equalsCode != null) return code == cond.equalsCode;
     final list = cond.inCodes;
