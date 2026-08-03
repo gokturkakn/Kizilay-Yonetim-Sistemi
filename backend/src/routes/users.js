@@ -19,17 +19,32 @@ import { optionalInt } from '../v2.js';
 
 const ROLES = ['genel_merkez', 'saha'];
 const MIN_PASSWORD = 8;
-const SELECT = `u.id, u.name, u.email, u.role, u.region_id, u.province_id, u.is_active,
-  rg.name AS region_name, pr.name AS province_name, u.created_at, u.updated_at`;
+const SELECT = `u.id, u.name, u.email, u.role, u.region_id, u.province_id, u.district_id,
+  u.is_active, u.must_change_password,
+  rg.name AS region_name, pr.name AS province_name, di.name AS district_name,
+  u.created_at, u.updated_at`;
 const FROM = `users u
   LEFT JOIN regions rg ON rg.id = u.region_id
-  LEFT JOIN provinces pr ON pr.id = u.province_id`;
-const FIELDS = ['name', 'email', 'role', 'region_id', 'province_id', 'is_active'];
+  LEFT JOIN provinces pr ON pr.id = u.province_id
+  LEFT JOIN districts di ON di.id = u.district_id`;
+const FIELDS = ['name', 'email', 'role', 'region_id', 'province_id', 'district_id', 'is_active'];
 
-function checkPassword(value) {
+/**
+ * Şifre gücü (asgari eşik).
+ *
+ * Uzunluk tek başına yetmez: "12345678" sekiz karakterdir. Harf + rakam şartı, sözlük
+ * saldırısına karşı sihirli bir çözüm değildir ama tohum/varsayılan tipi şifrelerin
+ * (`00000000`, `password`) kabul edilmesini engeller. Kaba kuvvet tarafı ayrıca
+ * `loginRateLimit.js` ile kapatılmıştır.
+ */
+export function checkPassword(value) {
   const pwd = String(value ?? '');
   if (pwd.length < MIN_PASSWORD) {
     throw new ApiError(400, 'WEAK_PASSWORD', `Şifre en az ${MIN_PASSWORD} karakter olmalı`);
+  }
+  if (!/[A-Za-zÇĞİıÖŞÜçğöşü]/.test(pwd) || !/\d/.test(pwd)) {
+    throw new ApiError(400, 'WEAK_PASSWORD',
+      'Şifre en az bir harf ve en az bir rakam içermeli');
   }
   return pwd;
 }
@@ -40,6 +55,14 @@ export default function userRoutes(db) {
 
   const getOne = (id) => db.prepare(`SELECT ${SELECT} FROM ${FROM} WHERE u.id = ?`).get(id);
 
+  /**
+   * Kapsam doğrulaması: bölge → il → ilçe.
+   *
+   * `district_id`, dokümanların `?applicable_to=district:<id>` görünümünü gerçek bir
+   * oturumdan ulaşılabilir kılar (önceden il en dar kırılımdı). İlçenin kullanıcının
+   * iline ait olması ZORUNLUDUR; aksi halde "Ankara sorumlusu"na Üsküdar kapsamı
+   * verilebilir ve kapsam alanı anlamını yitirirdi.
+   */
   function validateScope(body, existing = null) {
     const regionId = body.region_id !== undefined ? optionalInt(body.region_id, 'region_id') : (existing?.region_id ?? null);
     if (regionId !== null && !db.prepare('SELECT id FROM regions WHERE id = ?').get(regionId)) {
@@ -49,7 +72,20 @@ export default function userRoutes(db) {
     if (provinceId !== null && !db.prepare('SELECT id FROM provinces WHERE id = ?').get(provinceId)) {
       throw badRequest('province_id geçersiz');
     }
-    return { region_id: regionId, province_id: provinceId };
+    const districtId = body.district_id !== undefined
+      ? optionalInt(body.district_id, 'district_id')
+      : (existing?.district_id ?? null);
+    if (districtId !== null) {
+      const dist = db.prepare('SELECT id, province_id FROM districts WHERE id = ?').get(districtId);
+      if (!dist) throw badRequest('district_id geçersiz');
+      if (provinceId === null) {
+        throw badRequest("İlçe kapsamı verebilmek için 'province_id' de gönderilmelidir");
+      }
+      if (dist.province_id !== provinceId) {
+        throw badRequest('İlçe, seçilen ile ait değil');
+      }
+    }
+    return { region_id: regionId, province_id: provinceId, district_id: districtId };
   }
 
   function activeAdminCount(excludeId = null) {
@@ -95,17 +131,28 @@ export default function userRoutes(db) {
       }
       const password = checkPassword(b.password);
       const scope = validateScope(b);
+      // Yönetici tarafından açılan hesap, yöneticinin bildiği bir şifreyle başlar.
+      // Bu yüzden varsayılan olarak ilk girişte şifre değişikliği ZORUNLUDUR.
+      // Açıkça `must_change_password: false` gönderilerek devre dışı bırakılabilir
+      // (ör. istemcisi bu akışı desteklemeyen servis hesapları için).
+      const mustChange = parseBoolFlag(b.must_change_password) ?? 1;
 
       const { lastInsertRowid } = db.prepare(`
-        INSERT INTO users (name, email, password_hash, role, region_id, province_id, is_active, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
+        INSERT INTO users (name, email, password_hash, role, region_id, province_id, district_id,
+                           is_active, must_change_password, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
         String(b.name).trim(), email, bcrypt.hashSync(password, 10), b.role,
-        scope.region_id, scope.province_id, parseBoolFlag(b.is_active) ?? 1
+        scope.region_id, scope.province_id, scope.district_id,
+        parseBoolFlag(b.is_active) ?? 1, mustChange
       );
       const row = getOne(lastInsertRowid);
       auditLog(db, {
         entity: 'users', entityId: row.id, action: 'create', changedBy: req.user.id,
-        changes: { name: row.name, email: row.email, role: row.role, region_id: row.region_id, province_id: row.province_id },
+        changes: {
+          name: row.name, email: row.email, role: row.role, region_id: row.region_id,
+          province_id: row.province_id, district_id: row.district_id,
+          must_change_password: row.must_change_password,
+        },
       });
       res.status(201).json(row);
     } catch (e) { next(e); }
@@ -131,9 +178,9 @@ export default function userRoutes(db) {
 
       db.prepare(`
         UPDATE users SET name = ?, email = ?, role = ?, region_id = ?, province_id = ?,
-          updated_at = datetime('now') WHERE id = ?`).run(
+          district_id = ?, updated_at = datetime('now') WHERE id = ?`).run(
         b.name !== undefined ? String(b.name).trim() : before.name,
-        email, role, scope.region_id, scope.province_id, before.id
+        email, role, scope.region_id, scope.province_id, scope.district_id, before.id
       );
       const after = getOne(before.id);
       auditLog(db, {
@@ -169,12 +216,16 @@ export default function userRoutes(db) {
       const user = getOne(req.params.id);
       if (!user) throw notFound('Kullanıcı bulunamadı');
       const password = checkPassword((req.body || {}).password);
-      db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(bcrypt.hashSync(password, 10), user.id);
+      // Yönetici sıfırlaması: yeni şifreyi yönetici biliyor → kullanıcı ilk girişinde
+      // yeniden değiştirmek ZORUNDA. Bayrak burada tekrar kurulur.
+      const mustChange = parseBoolFlag((req.body || {}).must_change_password) ?? 1;
+      db.prepare(`UPDATE users SET password_hash = ?, must_change_password = ?,
+          updated_at = datetime('now') WHERE id = ?`)
+        .run(bcrypt.hashSync(password, 10), mustChange, user.id);
       // Şifrenin kendisi ASLA günlüğe yazılmaz.
       auditLog(db, {
         entity: 'users', entityId: user.id, action: 'password_reset', changedBy: req.user.id,
-        changes: { password: 'değiştirildi' },
+        changes: { password: 'değiştirildi', must_change_password: mustChange },
       });
       res.json({ ok: true });
     } catch (e) { next(e); }
@@ -183,29 +234,54 @@ export default function userRoutes(db) {
   return r;
 }
 
-/** Kullanıcının kendi şifresini değiştirmesi (rol farketmez). */
-export function selfPasswordRoute(db) {
+/**
+ * Kullanıcının kendisiyle ilgili uçları (rol farketmez).
+ *
+ * Bu iki uç `must_change_password` kapısının DIŞINDA tutulur (bkz. `src/auth.js`):
+ * biri kilidin sebebini gösterir, diğeri kilidi açar.
+ */
+export function selfRoutes(db) {
   const r = Router();
+
+  // Oturumdaki kullanıcı. `must_change_password` açıkken de erişilebilir olmalı;
+  // istemci "şifrenizi değiştirin" ekranını buna bakarak açar.
+  r.get('/auth/me', (req, res, next) => {
+    try {
+      const row = db.prepare(`SELECT ${SELECT} FROM ${FROM} WHERE u.id = ?`).get(req.user.id);
+      if (!row) throw notFound('Kullanıcı bulunamadı');
+      res.json(row);
+    } catch (e) { next(e); }
+  });
+
   r.post('/auth/change-password', (req, res, next) => {
     try {
       const b = req.body || {};
       requireFields(b, ['current_password', 'new_password']);
       const row = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.user.id);
       if (!row) throw notFound('Kullanıcı bulunamadı');
+      // Mevcut şifre ZORUNLU: çalınmış bir token'la şifre ele geçirilemesin.
       if (!bcrypt.compareSync(String(b.current_password), row.password_hash)) {
         throw new ApiError(401, 'UNAUTHORIZED', 'Mevcut şifre hatalı');
       }
       const password = checkPassword(b.new_password);
-      db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
+      // "Değiştirdim" deyip aynı şifreyi yazmak zorunlu değişikliği anlamsız kılardı.
+      if (bcrypt.compareSync(password, row.password_hash)) {
+        throw new ApiError(400, 'WEAK_PASSWORD', 'Yeni şifre mevcut şifreden farklı olmalı');
+      }
+      db.prepare(`UPDATE users SET password_hash = ?, must_change_password = 0,
+          updated_at = datetime('now') WHERE id = ?`)
         .run(bcrypt.hashSync(password, 10), row.id);
       auditLog(db, {
         entity: 'users', entityId: row.id, action: 'password_change', changedBy: req.user.id,
-        changes: { password: 'değiştirildi' },
+        changes: { password: 'değiştirildi', must_change_password: { old: 1, new: 0 } },
       });
       res.json({ ok: true });
     } catch (e) { next(e); }
   });
   return r;
 }
+
+// v2.1 öncesi ad — `app.js` dışında kullanan kalmadı, uyum için korunur.
+export const selfPasswordRoute = selfRoutes;
 
 export { toIntOrThrow };

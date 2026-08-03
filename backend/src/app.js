@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate } from './auth.js';
+import { authenticate, requirePasswordChange } from './auth.js';
 import { ApiError, errorBody } from './helpers.js';
 import { schemaVersion, migrationCount } from './db.js';
 import { MAX_UPLOAD_BYTES } from './config.js';
@@ -23,7 +23,7 @@ import logisticsRoutes from './routes/logistics.js';
 import attachmentRoutes from './routes/attachments.js';
 import calendarRoutes from './routes/calendar.js';
 import contentBlockRoutes from './routes/contentBlocks.js';
-import userRoutes, { selfPasswordRoute } from './routes/users.js';
+import userRoutes, { selfRoutes } from './routes/users.js';
 import dashboardRoutes from './routes/dashboard.js';
 // --- v2.1 (M6) ---
 import documentRoutes from './routes/documents.js';
@@ -82,6 +82,11 @@ export function createApp(db) {
 
   const secured = express.Router();
   secured.use(authenticate);
+  // Zorunlu şifre değişikliği kapısı — kimlik doğrulamadan HEMEN SONRA, her uçtan ÖNCE.
+  // Yalnız `GET /auth/me` ve `POST /auth/change-password` geçer (bkz. src/auth.js).
+  secured.use(requirePasswordChange(db));
+  // Kullanıcının kendi uçları (kapının izin verdiği ikisi burada tanımlıdır).
+  secured.use(selfRoutes(db));
   // v1 uçları — davranışları korunur
   secured.use(referenceRoutes(db));
   secured.use(personRoutes(db));
@@ -103,7 +108,6 @@ export function createApp(db) {
   secured.use(calendarRoutes(db));
   secured.use(contentBlockRoutes(db));
   secured.use(userRoutes(db));
-  secured.use(selfPasswordRoute(db));
   secured.use(dashboardRoutes(db));
   // v2.1 — Kılavuz ve Dokümanlar (SPEC-V2-M6)
   secured.use(documentRoutes(db));

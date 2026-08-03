@@ -1,6 +1,6 @@
 # API Contract — Teşkilat Yönetim Sistemi **v2**
 
-**Sürüm:** 2.1 · **Tarih:** 2026-08-02 · **Durum:** Faz A + Faz B (veri temeli + API) + M6 (dokümanlar) — bağlayıcı sözleşme
+**Sürüm:** 2.2 · **Tarih:** 2026-08-03 · **Durum:** Faz A + Faz B (veri temeli + API) + M6 (dokümanlar) + M7 (güvenlik sertleştirme) — bağlayıcı sözleşme
 
 Base URL: `http://localhost:4141/api/v1` · JSON · JWT bearer auth (`POST /auth/login` hariç).
 Hata gövdesi: `{ "error": { "code": string, "message": string } }`.
@@ -25,6 +25,8 @@ Tüm liste uçları `?page=1&limit=50` alır ve `{ "data": [...], "total": n }` 
 | `POST /meetings` | Aynı gövde çalışır. `decision` artık **zorunlu değil** (sözleşme gevşetildi, bkz. §7). |
 | `/bodies`, `/commissions`, `/task-areas`, `/memberships`, `/field-activities`, `/assignments`, `/audit-logs`, `/export/*.xlsx` | Değişmedi. |
 | `GET /health` | Aynı gövde + `seeded` altında yeni v2 sayaçları. |
+| `persons.tc_no` (v2.2) | Alan **her yanıtta durmaya devam eder** ve 11 karakterdir, ama liste yanıtlarında **maskelidir** (`123******01`). Tam numara `GET /persons/:id` + `genel_merkez`. Yanıtlara `tc_masked` eklendi. Bu, sözleşmenin bilinçli olarak **daraltıldığı** tek yerdir; gerekçe §1.10 (KVKK). |
+| `POST /users` (v2.2) | Yeni hesaplar `must_change_password: 1` ile açılır. Eski davranış için gövdeye `must_change_password: false` ekleyin. Mevcut hesaplar etkilenmez (göç `0` yazar). |
 
 **Kırıcı olan tek şey veritabanı sütunudur, API değil:** `persons.is_active` sütunu
 `persons.status`'a dönüştürülmüştür. Doğrudan SQL çalıştıran hiçbir istemci yok.
@@ -60,6 +62,98 @@ Yeni `entity` değerleri: `lookup_items`, `lookup_categories`, `org_units`, `org
 `genel_merkez` (tam yetki) · `saha` (faaliyet girişi + okuma).
 Yönetim Paneli uçları (`/users`, `/lookup-*`, `/calendar-events` yazma, `/content-blocks` yazma,
 `/org-units` yazma) **yalnız `genel_merkez`**.
+
+### 1.7 Ortam ve açılış güvenliği (v2.2 — M7)
+
+Sunucu, ortamı **üretim benzeri** sayarsa iki kontrolü açılışta uygular.
+
+**"Üretim benzeri" tespiti** — şu üçünden HERHANGİ BİRİ:
+
+| Koşul | Kaynak |
+|---|---|
+| `NODE_ENV=production` | standart Node sözleşmesi |
+| `RENDER` tanımlı (herhangi bir değer) | Render.com barındırması (`RENDER=true` verir) |
+| `KK_ENV=production` | başka platformlarda elle işaretleme |
+
+Kaçış kapısı: **`KK_ENV=development` her zaman kazanır** ve ortamı geliştirme sayar.
+Tek bir değişkene bağlı olmaması bilinçlidir: Render ikisini birden verir, biri elle
+silinse bile koruma ayakta kalır. Tek tanım `backend/src/config.js → isProductionLike()`.
+
+**Kontrol 1 — JWT imza anahtarı (fail-fast).** Üretim benzeri ortamda `KK_JWT_SECRET`
+yoksa, 32 karakterden kısaysa ya da geliştirme varsayılanına eşitse **sunucu açılmaz**
+(çıkış kodu 1, çok satırlı Türkçe açıklama + çözüm komutu). Yerelde varsayılan anahtar
+kullanılmaya devam eder.
+
+**Kontrol 2 — tohum giriş hesabı.** Üç mod vardır:
+
+| Mod | Koşul | Sonuç |
+|---|---|---|
+| `dev` | üretim benzeri **değil**, `KK_SEED_ADMIN_*` yok | v1'deki iki tohum hesabı açılır, `must_change_password = 0` (yerel testler etkilenmez) |
+| `env` | `KK_SEED_ADMIN_EMAIL` + `KK_SEED_ADMIN_PASSWORD` verilmiş | **Yalnız** o `genel_merkez` hesabı açılır, `must_change_password = 1` |
+| `none` | üretim benzeri, değişken yok | **Hiçbir hesap açılmaz**; konsola ilk yöneticinin nasıl açılacağını anlatan Türkçe uyarı basılır |
+
+Yarım/geçersiz yapılandırma (tek değişken, bozuk e-posta, 8 karakterden kısa şifre)
+sessizce yok sayılmaz: açılış hata ile durur. Açılış günlüğü modu bildirir
+(`giriş hesabı modu: env`). `/health` yanıtı değişmedi.
+
+### 1.8 Zorunlu şifre değişikliği (`must_change_password`)
+
+Tohumlanan (mod `env`) ve **yönetici tarafından açılan** her hesap bu bayrakla gelir;
+`PUT /users/:id/password` (yönetici sıfırlaması) bayrağı **yeniden kurar**.
+
+Bayrak açıkken:
+
+- Giriş (`POST /auth/login`) **çalışır** ve yanıt `user.must_change_password: 1` içerir.
+- `GET /auth/me` ve `POST /auth/change-password` **çalışır**.
+- Diğer **her** uç → `403 PASSWORD_CHANGE_REQUIRED` (Türkçe mesaj, ne yapılacağını söyler).
+
+`POST /auth/change-password` başarılı olunca bayrak düşer ve **aynı token** anında
+çalışmaya başlar (yeniden giriş gerekmez). Bayrak her istekte veritabanından okunur.
+
+Devre dışı bırakma: `POST /users` gövdesine `must_change_password: false` (istemcisi bu
+akışı desteklemeyen servis hesapları için).
+
+### 1.9 Giriş hız sınırlaması (denetim Y-3)
+
+`POST /auth/login` iki bağımsız sayaç tutar; ikisi de kilitleyebilir:
+
+| Sayaç | Varsayılan sınır | Kilitler |
+|---|---|---|
+| Hesap (`e-posta`) | 5 başarısız / 15 dk | dağıtık parola denemesi |
+| IP adresi | 20 başarısız / 15 dk | hesap sayma (credential stuffing) |
+
+- Kilitliyken **doğru şifre de** `429 TOO_MANY_ATTEMPTS` alır (kilit atlatılamaz).
+  Yanıt `Retry-After` başlığı ve kalan süreyi söyleyen Türkçe mesaj taşır.
+- Kilit süresi dolunca **kendiliğinden** çözülür; başarılı giriş iki sayacı da sıfırlar.
+- `ACCOUNT_DISABLED` bir kimlik hatası değildir, sayacı artırmaz.
+- Ayarlar: `KK_LOGIN_MAX_ATTEMPTS`, `KK_LOGIN_IP_MAX_ATTEMPTS`, `KK_LOGIN_WINDOW_MS`,
+  `KK_LOGIN_LOCK_MS`.
+- ⚠ Sayaçlar **süreç belleğindedir**: yeniden başlatmada sıfırlanır, birden çok örnekte
+  etkin sınır örnek sayısı kadar gevşer. Bugünkü dağıtım tek örnektir; yatay ölçeklemede
+  paylaşımlı bir sayaca (Redis) taşınmalıdır (`backend/src/loginRateLimit.js`).
+
+### 1.10 TC kimlik maskeleme (KVKK — denetim Y-1)
+
+`123******01` — ilk 3 ve son 2 hane korunur, ortadaki 6 hane yıldızlanır.
+
+| Yanıt | Genel merkez | Saha |
+|---|---|---|
+| `GET /persons` (liste) | **maskeli** | **maskeli** |
+| `GET /bodies/:id/members` (liste) | **maskeli** | **maskeli** |
+| `GET /persons/:id` (tek kayıt) | tam numara | **maskeli** |
+| `POST` / `PUT` / `PATCH /persons…` | tam numara | (uç zaten 403) |
+| `GET /export/persons.{xlsx,pdf}` | **maskeli** (varsayılan) | (uç zaten 403) |
+| `GET /export/persons.{xlsx,pdf}?unmasked=1` | tam numara + **denetim izi** | (uç zaten 403) |
+
+Her kişi yanıtı `tc_masked: 0|1` alanı taşır; istemci değerin kırpılmış olup olmadığını
+tahmin etmek zorunda kalmaz.
+
+`?unmasked=1` (ya da `unmasked=true`) alındığında `audit_logs`'a bir satır yazılır:
+`entity: 'exports'`, `action: 'export_unmasked'`, `changes: {report, format, fields,
+row_count, filters}`. Maskeli (varsayılan) rapor satır yazmaz.
+
+**Kalan iş (bu turda YAPILMADI):** numara veritabanında hâlâ açık metindir. Diskte
+şifreleme (at-rest) anahtar yönetimi gerektirir ve şemayı etkiler; ayrı bir tur işidir.
 
 ---
 
@@ -416,22 +510,46 @@ Artık genel merkez kullanıcı açabilir ve kapsam verebilir.
 
 ```jsonc
 {
-  "id": 3, "name": "Ankara Saha Sorumlusu", "email": "ankara@kizilay.org.tr",
+  "id": 3, "name": "Çankaya Saha Sorumlusu", "email": "cankaya@kizilay.org.tr",
   "role": "genel_merkez|saha",
-  "region_id": 4, "province_id": 6,      // yetki kapsamı (bilgi amaçlı; zorlanmaz — bkz. not)
-  "is_active": 1, "created_at": "…", "updated_at": "…"
+  "region_id": 4, "province_id": 6, "district_id": 88,   // yetki kapsamı (bilgi amaçlı; zorlanmaz — bkz. not)
+  "region_name": "İç Anadolu", "province_name": "Ankara", "district_name": "Çankaya",
+  "is_active": 1,
+  "must_change_password": 0,             // 1 iken API yalnız /auth/me + /auth/change-password kabul eder
+  "created_at": "…", "updated_at": "…"
 }
 ```
 `password_hash` **hiçbir yanıtta dönmez.**
 
 - `GET /users?role=&is_active=&q=` *(genel_merkez)*
-- `POST /users` *(genel_merkez)* `{name, email, password, role, region_id?, province_id?}` → 201
-  Şifre en az 8 karakter olmalı (400 `WEAK_PASSWORD`). E-posta benzersiz (409).
-- `GET /users/:id` · `PUT /users/:id` `{name?, email?, role?, region_id?, province_id?}`
+- `POST /users` *(genel_merkez)*
+  `{name, email, password, role, region_id?, province_id?, district_id?, must_change_password?}` → 201
+  Şifre en az 8 karakter **ve** en az bir harf + bir rakam içermeli (400 `WEAK_PASSWORD`).
+  E-posta benzersiz (409). `must_change_password` **varsayılan 1**'dir (§1.8).
+- `GET /users/:id` · `PUT /users/:id` `{name?, email?, role?, region_id?, province_id?, district_id?}`
 - `PATCH /users/:id/active` `{is_active}` — **pasif kullanıcı giriş yapamaz** (401 `ACCOUNT_DISABLED`).
   Son aktif `genel_merkez` hesabı pasifleştirilemez → 409 `LAST_ADMIN`.
-- `PUT /users/:id/password` *(genel_merkez)* `{password}` → 200 `{ok:true}`
+- `PUT /users/:id/password` *(genel_merkez)* `{password, must_change_password?}` → 200 `{ok:true}`
+  Bayrağı **yeniden kurar** (varsayılan 1): yeni şifreyi yönetici biliyor.
+- `GET /auth/me` *(her kullanıcı)* → oturumdaki kullanıcı kaydı (yukarıdaki model).
+  `must_change_password` açıkken de erişilebilir; istemci kilit ekranını buna bakarak açar.
 - `POST /auth/change-password` *(her kullanıcı, kendi hesabı)* `{current_password, new_password}` → 200
+  Mevcut şifre **zorunludur** (401 yanlışsa). Yeni şifre mevcutla aynı olamaz (400).
+  Başarılı olunca `must_change_password` düşer ve **aynı token** çalışmaya devam eder.
+
+### `district_id` — kullanıcı kapsamının en dar kırılımı (v2.2)
+
+`region_id → province_id → district_id` zinciri. Doğrulama:
+
+- `district_id` verilirse `province_id` de verilmelidir → yoksa 400.
+- İlçe, verilen ile ait olmalıdır → değilse 400 *"İlçe, seçilen ile ait değil"*.
+- Bilinmeyen ilçe → 400.
+- `null` göndererek boşaltılabilir.
+
+**Neden eklendi:** bu sütun olmadan giriş yapmış bir kullanıcının ifade edebildiği en
+dar kapsam **il**di; dolayısıyla dokümanlardaki `?applicable_to=district:<id>` görünümü
+(§19.4a) gerçek bir oturumdan hiç ulaşılamıyordu. Aynı sebeple tohumlanan `saha` hesabı
+artık **Ankara / Çankaya** kapsamıyla açılır (yalnız yerel geliştirme modunda).
 
 > **Not (kapsam zorlaması):** `region_id`/`province_id` bu sürümde **kaydedilir ve raporlanır,
 > ancak yazma yetkisini henüz kısıtlamaz**. Denetim raporundaki Y-2'nin *"tek paylaşımlı saha
@@ -480,8 +598,12 @@ Bölge kırılımlı ısı haritası verisi:
 
 `GET/POST/PUT /persons` yanıtına eklenen alanlar:
 `status` · `region_id` · `region_name` · `province_name` · `district_name` ·
-`start_date` · `end_date` · `notes` · `attachment_count`.
+`start_date` · `end_date` · `notes` · `attachment_count` · `tc_masked` (v2.2).
 `is_active` **kaldırılmadı** (§0). v1'in tüm alanları aynı adla durmaya devam eder.
+
+> **v2.2 — `tc_no` artık liste yanıtlarında MASKELİDİR** (`123******01`). Alan adı ve
+> uzunluğu değişmedi; yalnız içeriği kısıtlandı. Tam numara `GET /persons/:id` üzerinden
+> ve yalnız `genel_merkez` için gelir. Kural tablosu: **§1.10**.
 
 `start_date` / `end_date` = SPEC-V2 §3.1'deki **Göreve Başlama / Görev Bitiş Tarihi**;
 kişi formu bunları düz alan olarak yazar. Yapısal (birim bazlı) görev geçmişi için
@@ -505,16 +627,16 @@ Gerçek çıktı (temiz kurulum, referans veri):
 {
   "status": "ok",
   "db": "ok",
-  "schema_version": "010_users_v2",
-  "migrations_applied": 10,
+  "schema_version": "013_users_district_password",
+  "migrations_applied": 13,
   "seeded": {
     "provinces": 81,
     "districts": 973,
     "commissions": 6,
     "regions": 7,
     "provinces_mapped_to_region": 81,
-    "lookup_categories": 14,
-    "lookup_items": 138,
+    "lookup_categories": 16,
+    "lookup_items": 147,
     "org_units": 1068,
     "calendar_events": 68,
     "content_blocks": 13,
@@ -534,11 +656,13 @@ Gerçek çıktı (temiz kurulum, referans veri):
 | `INVALID_TC_NO` | 400 | TC kimlik sağlaması geçersiz |
 | `UNSUPPORTED_FILE_TYPE` | 400 | Ek türü izinli listede değil |
 | `FILE_TOO_LARGE` | 400 | 10 MB üstü |
-| `WEAK_PASSWORD` | 400 | Şifre 8 karakterden kısa |
+| `WEAK_PASSWORD` | 400 | Şifre 8 karakterden kısa, harf/rakam içermiyor ya da eskisiyle aynı |
 | `INSUFFICIENT_STOCK` | 400 | Stok çıkışı bakiyeyi eksiye düşürür |
 | `UNAUTHORIZED` | 401 | Token yok/geçersiz |
 | `ACCOUNT_DISABLED` | 401 | Kullanıcı pasif |
 | `FORBIDDEN` | 403 | Rol yetersiz |
+| `PASSWORD_CHANGE_REQUIRED` | 403 | Zorunlu şifre değişikliği bekliyor (§1.8) |
+| `TOO_MANY_ATTEMPTS` | 429 | Giriş hız sınırı aşıldı; `Retry-After` başlığı döner (§1.9) |
 | `NOT_FOUND` | 404 | Kayıt yok |
 | `CONFLICT` | 409 | Benzersizlik ihlali |
 | `IN_USE` | 409 | Bağımlı kayıt var, silinemez |
@@ -567,6 +691,7 @@ transaction'ında çalışır; hata halinde geri alınır ve sunucu **açılmaz*
 | 010 | `010_users_v2` | `users.is_active/region_id/province_id/updated_at` |
 | 011 | `011_meeting_participants` | `meetings.participant_count`, `meetings.district_id` |
 | 012 | `012_documents` | `documents` (SPEC-V2-M6 — kılavuz ve doküman kütüphanesi) |
+| 013 | `013_users_district_password` | `users.district_id` + `users.must_change_password` (M7) |
 
 v1 veritabanı yerinde yükseltilir; `persons`, `meetings`, `field_activities`, `memberships`,
 `assignments`, `audit_logs` verisi **kaybolmaz** (`backend/test/migration.mjs` bunu kanıtlar).
@@ -613,7 +738,10 @@ korunur. Yalnız eksik olan eklenir.
 | 3 | `bolge` hem `regions` tablosu hem `lookup_items` kategorisi olarak var | SPEC-V2 K1 kategori listesinde `bolge` geçiyor, K2 ise ayrı bir tablo istiyor. Raporlamanın tek doğru kaynağı **`regions`**; `lookup_items(bolge)` yalnız genel form altyapısı içindir. |
 | 4 | `etkinlik_adi` kategorisi takvimden ayrı | SPEC-V2 §3.2C etkinlik adının **takvimden** seçilmesini şart koşuyor (`calendar_event_id` zorunlu). `etkinlik_adi` tamamlayıcı program adıdır (ör. "Çelenk Sunma Töreni"). |
 | 5 | Hareketli dinî günlerin yalnız 2 tanesine yıl tarihi tohumlandı | Ramazan ve Kurban Bayramı 2026–2027 dışındaki kandillerin tarihi uydurulmadı; yönetici `POST /calendar-events/:id/dates` ile girer. |
-| 6 | `users.region_id/province_id` kaydediliyor ama yazma yetkisini kısıtlamıyor | Nesne düzeyinde yetkilendirme (denetim Y-2'nin tamamı) v2.1 kapsamındadır. |
+| 6 | `users.region_id/province_id/district_id` kaydediliyor ama yazma yetkisini kısıtlamıyor | Nesne düzeyinde yetkilendirme (denetim Y-2'nin tamamı) hâlâ açıktır; `district_id` (v2.2) kapsamı *ifade edilebilir* kılar, *zorlamaz*. |
+| 9 | TC numarası veritabanında hâlâ **açık metin** | v2.2 maskelemeyi taşıma (transport) katmanında yaptı: liste, üye listesi ve varsayılan rapor maskeli. At-rest şifreleme anahtar yönetimi gerektirir ve şemayı etkiler — ayrı bir tur işidir (§1.10). |
+| 10 | Giriş hız sınırlaması **süreç belleğinde** | Tek örnekli dağıtım için yeni bir bağımlılık (Redis) eklemek orantısızdı. Yatay ölçeklemede paylaşımlı sayaca taşınmalıdır; arayüz aynı kalır (§1.9). |
+| 11 | Yerel geliştirme tohum hesapları hâlâ sabit şifreli ve `must_change_password = 0` | Aksi halde her `npm test` ve her yerel çalıştırma önce şifre değiştirmek zorunda kalırdı. Bu hesaplar üretim benzeri ortamda **hiç oluşturulmaz** (§1.7). |
 | 7 | Süre alanı `duration_hours REAL` (saat) | SPEC "Süre" diyor, birim vermiyor; saat ondalıklı olarak (4.5) tutulur, dashboard toplar. |
 | 8 | 7 bölge temsilciliği birimi de tohumlandı | SPEC-V2 §3.1 "Bölge Temsilcileri" alt modülünü ve K4 `bolge_temsilciligi` türünü istiyor; il başkanlıkları bunların altına bağlanır. |
 
@@ -653,13 +781,27 @@ Tohumlanan 4 kategori: **Kılavuzlar · Formlar ve Matbu Belgeler · Proje Dokü
   "is_expired": 0,                        // türetilir → "Süresi doldu" rozeti
   "is_active": 1,                         // 0 = yayından kaldırıldı (SİLİNMEDİ)
   "download_count": 12,
-  "attachment_count": 2,
+  "attachment_count": 2,                  // geriye dönük uyum için KORUNDU
+  "files": [                              // v2.2 — kompakt dosya özeti, LİSTEDE de döner
+    { "id": 41, "mime": "application/pdf", "size": 528491, "file_name": "gonullu-el-kitabi.pdf" },
+    { "id": 42, "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "size": 92110, "file_name": "gonullu-el-kitabi.docx" }
+  ],
   "created_by": 1, "created_by_name": "Genel Merkez Admin",
   "created_at": "…", "updated_at": "…"
 }
 ```
 
-`GET /documents/:id` gövdeye ayrıca `attachments: [ … ]` ekler (bkz. §9 dosya eki modeli).
+**`files` (v2.2)** — her doküman satırı, eklerinin `{id, mime, size, file_name}` özetini
+taşır; eki olmayan dokümanda `[]` döner. Önceden liste yalnız `attachment_count`
+döndürdüğü için istemci dosya türünü/boyutunu göstermek adına ayrıca
+`GET /attachments?entity=documents` çağırmak zorundaydı — **bu ikinci istek artık
+gereksizdir**. Özet, sayfa başına tek bir `IN (...)` sorgusuyla toplanır (N+1 yok).
+İndirme için gereken tam model (`download_url`, `kind`, `uploaded_by_name`) hâlâ
+`GET /documents/:id` içindeki `attachments` alanındadır.
+
+`GET /documents/:id` gövdeye ayrıca `attachments: [ … ]` ekler (bkz. §9 dosya eki modeli);
+`files` özeti tek kayıt yanıtında da bulunur, böylece liste ve detay ekranı aynı alanı okur.
 
 ### 19.3 Kapsam kuralları (400 ile zorlanır)
 
@@ -679,7 +821,8 @@ Tohumlanan 4 kategori: **Kılavuzlar · Formlar ve Matbu Belgeler · Proje Dokü
 ### 19.4 Uçlar
 
 - `GET /documents?category_id=&scope=&applicable_to=&region_id=&province_id=&district_id=&q=&is_active=`
-  → `{data, total}` — **iki farklı kapsam modu vardır, bkz. §19.4a**
+  → `{data, total}` — her satır `files` özetini taşır (§19.2);
+  **iki farklı kapsam modu vardır, bkz. §19.4a**
   - `q` başlık **ve** açıklamada arar, **Türkçe büyük/küçük harf duyarsızdır**
     (`I↔ı`, `İ↔i`; SQLite'ın ASCII `LIKE`'ı yetmediği için `tr_lower` işlevi kullanılır).
     Türkçe kuralı gereği noktalı/noktasız i ayrımı **korunur**: `kilavuz` ≠ `kılavuz`.
@@ -762,4 +905,10 @@ Raporlar: `persons` · `org-units` · `tasks` · `trainings` · `events` · `mee
   gömülür** (PDFKit'in varsayılan Helvetica'sı WinAnsi olduğundan ş/ğ/İ/ı karakterlerini
   bozar). Kayıt yoksa "Seçilen filtrelere uygun kayıt bulunamadı." yazar.
 - Bilinmeyen rapor adı → 404.
+- **`?unmasked=1` (v2.2)** — yalnız `persons` raporunu etkiler. Varsayılan olarak
+  `TC Kimlik No` sütunu **maskelidir** (`123******01`); `unmasked=1` / `unmasked=true`
+  ile tam numara alınır. Uç zaten yalnız `genel_merkez`e açıktır. Maskesiz her çıktı
+  `audit_logs`'a `entity: 'exports'`, `action: 'export_unmasked'` satırı yazar
+  (`report`, `format`, `fields`, `row_count`, `filters` dahil). Maskeli çıktı satır
+  yazmaz. Ayrıntı: §1.10.
 

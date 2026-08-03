@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ExcelJS from 'exceljs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = path.resolve(__dirname, '..');
@@ -53,6 +54,11 @@ const server = spawn(process.execPath, ['src/server.js'], {
   env: {
     ...process.env,
     KK_DB_PATH: dbPath, KK_UPLOAD_DIR: uploadDir, PORT: String(PORT), KK_SEED_DEMO: '1',
+    // Bu paket boyunca birkaç kez bilinçli olarak hatalı giriş denenir (yanlış şifre,
+    // eski şifre). IP başına varsayılan sınır (20) bunlara yeter ama testin sayıya
+    // bağlı kırılgan olmaması için gevşetilir: kaba kuvvet koruması kendi paketinde
+    // (test/security.mjs) sınır sınır ölçülür.
+    KK_LOGIN_IP_MAX_ATTEMPTS: '200',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -96,6 +102,28 @@ try {
   const sahaLogin = await req('POST', '/auth/login', { body: { email: 'saha@kizilay.org.tr', password: 'Saha!2026' } });
   check('saha girişi', sahaLogin.status === 200 && sahaLogin.json.user.role === 'saha');
   const saha = sahaLogin.json.token;
+
+  // --- GET /auth/me (yeni) ----------------------------------------------
+  const me = await req('GET', '/auth/me', { token: admin });
+  check('GET /auth/me oturumdaki kullanıcıyı döndürüyor',
+    me.status === 200 && me.json.email === 'admin@kizilay.org.tr' && me.json.role === 'genel_merkez',
+    JSON.stringify(me.json));
+  check('/auth/me password_hash döndürmüyor', me.json.password_hash === undefined);
+  check('/auth/me must_change_password alanını taşıyor (yerel tohum hesabında 0)',
+    me.json.must_change_password === 0);
+  check('/auth/me token olmadan 401', (await req('GET', '/auth/me')).status === 401);
+
+  // Tohumlanan `saha` hesabı artık coğrafya taşır: dokümanlardaki kapsam anahtarı
+  // ve `applicable_to` görünümü temiz kurulumda ilk günden denenebilir olmalı.
+  const sahaMe = await req('GET', '/auth/me', { token: saha });
+  check('tohum saha hesabı Ankara / Çankaya kapsamıyla geliyor',
+    sahaMe.status === 200 && sahaMe.json.province_name === 'Ankara'
+    && sahaMe.json.district_name === 'Çankaya' && sahaMe.json.district_id > 0,
+    JSON.stringify(sahaMe.json));
+  check('tohum saha hesabının bölgesi ilden türetilmiş (İç Anadolu)',
+    sahaMe.json.region_name === 'İç Anadolu', `alınan: ${sahaMe.json.region_name}`);
+  check('tohum genel merkez hesabı ülke geneli (kapsamsız)',
+    me.json.province_id === null && me.json.district_id === null);
 
   console.log('\n[3] Tüm GET uçları');
   const provinces = await req('GET', '/provinces?limit=100', { token: admin });
@@ -221,6 +249,38 @@ try {
   });
   check('PUT is_active gönderilmezse mevcut değer korunur', untouched.status === 200 && untouched.json.is_active === 1);
 
+  // ======================================================================
+  // KVKK — TC kimlik maskeleme (denetim raporu Y-1)
+  // ======================================================================
+  console.log('\n[4b] KVKK — TC kimlik maskeleme');
+  const TC_MASK_RE = /^\d{3}\*{6}\d{2}$/;
+  const maskedList = await req('GET', '/persons?limit=100', { token: admin });
+  check('liste yanıtında TC MASKELİ — genel merkez için de',
+    maskedList.status === 200 && maskedList.json.data.length > 0
+    && maskedList.json.data.every((p) => TC_MASK_RE.test(p.tc_no)),
+    JSON.stringify(maskedList.json.data.slice(0, 2).map((p) => p.tc_no)));
+  check('liste yanıtında tc_masked = 1',
+    maskedList.json.data.every((p) => p.tc_masked === 1));
+  check('maskeleme ilk 3 ve son 2 haneyi koruyor (99988877780 → 999******80)',
+    maskedList.json.data.find((p) => p.id === pid)?.tc_no === '999******80',
+    JSON.stringify(maskedList.json.data.find((p) => p.id === pid)?.tc_no));
+  check('saha liste yanıtında da TC maskeli',
+    (await req('GET', '/persons?limit=100', { token: saha })).json.data.every((p) => TC_MASK_RE.test(p.tc_no)));
+
+  const fullOne = await req('GET', `/persons/${pid}`, { token: admin });
+  check('GET /persons/:id genel merkez için TAM numara döndürüyor',
+    fullOne.status === 200 && fullOne.json.tc_no === '99988877780' && fullOne.json.tc_masked === 0,
+    JSON.stringify(fullOne.json.tc_no));
+  const sahaOne = await req('GET', `/persons/${pid}`, { token: saha });
+  check('GET /persons/:id saha için MASKELİ',
+    sahaOne.status === 200 && sahaOne.json.tc_no === '999******80' && sahaOne.json.tc_masked === 1,
+    JSON.stringify(sahaOne.json.tc_no));
+
+  const memberList = await req('GET', `/bodies/${kurul.id}/members`, { token: admin });
+  check('kurul üye listesinde de TC maskeli (liste = liste)',
+    memberList.json.data.every((m) => TC_MASK_RE.test(m.person.tc_no) && m.person.tc_masked === 1),
+    JSON.stringify(memberList.json.data.map((m) => m.person.tc_no)));
+
   console.log('\n[5] Saha faaliyeti / toplantı / atama oluşturma');
   const ta = taskAreas.json.data[0];
   const newAct = await req('POST', '/field-activities', {
@@ -272,6 +332,68 @@ try {
   check('xlsx PK zip imzası', buf[0] === 0x50 && buf[1] === 0x4b, `ilk baytlar: ${buf[0]},${buf[1]}`);
   const xlsxForbidden = await req('GET', '/export/persons.xlsx', { token: saha, raw: true });
   check('export saha için 403', xlsxForbidden.status === 403);
+
+  // --- KVKK: rapor maskeleme + maskesiz çıktının denetim izi (Y-1) -------
+  // Excel gerçekten açılıp TC sütunu okunur; "maskeledik" iddiası dosyadan doğrulanır.
+  async function tcColumn(query) {
+    const res = await req('GET', `/export/persons.xlsx${query}`, { token: admin, raw: true });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Buffer.from(await res.arrayBuffer()));
+    const ws = wb.worksheets[0];
+    const header = ws.getRow(1).values.map((v) => (v == null ? '' : String(v)));
+    const col = header.indexOf('TC Kimlik No');
+    const values = [];
+    for (let i = 2; i <= ws.rowCount; i += 1) {
+      const v = ws.getRow(i).getCell(col).value;
+      if (v !== null && v !== undefined && v !== '') values.push(String(v));
+    }
+    return { status: res.status, header, values };
+  }
+
+  const maskedReport = await tcColumn('');
+  check('rapor sütun başlıkları korunuyor (TC Kimlik No)',
+    maskedReport.header.includes('TC Kimlik No'), JSON.stringify(maskedReport.header));
+  check('VARSAYILAN Excel raporunda TC maskeli',
+    maskedReport.values.length > 0 && maskedReport.values.every((v) => TC_MASK_RE.test(v)),
+    JSON.stringify(maskedReport.values.slice(0, 3)));
+
+  const auditsBefore = await req('GET', '/audit-logs?entity=exports&limit=100', { token: admin });
+  check('maskeli rapor denetim izine satır YAZMAZ (gürültü üretmez)',
+    (auditsBefore.json.data || []).filter((a) => a.action === 'export_unmasked').length === 0);
+
+  const unmaskedReport = await tcColumn('?unmasked=1');
+  check('?unmasked=1 ile genel merkez TAM numara alabiliyor',
+    unmaskedReport.values.length > 0 && unmaskedReport.values.every((v) => /^\d{11}$/.test(v)),
+    JSON.stringify(unmaskedReport.values.slice(0, 3)));
+  check('maskeli ve maskesiz rapor aynı sayıda satır döndürüyor',
+    unmaskedReport.values.length === maskedReport.values.length,
+    `${unmaskedReport.values.length} / ${maskedReport.values.length}`);
+
+  const exportAudits = await req('GET', '/audit-logs?entity=exports&limit=100', { token: admin });
+  const unmaskedRows = (exportAudits.json.data || []).filter((a) => a.action === 'export_unmasked');
+  check('maskesiz rapor denetim izine düşüyor (export_unmasked)',
+    unmaskedRows.length === 1, JSON.stringify(exportAudits.json.data));
+  check('denetim satırı raporu, biçimi ve alanı kaydediyor',
+    unmaskedRows[0]?.changes?.report === 'persons'
+    && unmaskedRows[0]?.changes?.format === 'xlsx'
+    && Array.isArray(unmaskedRows[0]?.changes?.fields)
+    && unmaskedRows[0].changes.fields.includes('tc_no'),
+    JSON.stringify(unmaskedRows[0]?.changes));
+  check('denetim satırı "kim" sorusunu isimle cevaplıyor',
+    unmaskedRows[0]?.changed_by_name === 'Genel Merkez Admin', unmaskedRows[0]?.changed_by_name);
+  check('maskesiz PDF de denetim izine düşüyor', await (async () => {
+    await req('GET', '/export/persons.pdf?unmasked=true', { token: admin, raw: true });
+    const after = await req('GET', '/audit-logs?entity=exports&limit=100', { token: admin });
+    return (after.json.data || []).filter((a) => a.action === 'export_unmasked'
+      && a.changes?.format === 'pdf').length === 1;
+  })());
+  check('saha maskesiz rapor alamaz (403 — /export tamamen kapalı)',
+    (await req('GET', '/export/persons.xlsx?unmasked=1', { token: saha, raw: true })).status === 403);
+  check('hassas alanı olmayan raporda unmasked bayrağı denetim satırı üretmiyor', await (async () => {
+    await req('GET', '/export/meetings.xlsx?unmasked=1', { token: admin, raw: true });
+    const after = await req('GET', '/audit-logs?entity=exports&limit=100', { token: admin });
+    return (after.json.data || []).filter((a) => a.action === 'export_unmasked').length === 2;
+  })());
 
   // SPEC-V2 §3.4: "Excel ve PDF çıktıları". Sekiz raporun ikisi de üretilebilmeli.
   console.log('\n[7b] PDF dışa aktarım');
@@ -683,6 +805,194 @@ try {
   check('PUT /users/:id/password 200',
     (await req('PUT', `/users/${newUser.json.id}/password`, { token: admin, body: { password: 'YeniSifre!2026' } })).json.ok === true);
 
+  // --- users.district_id (yeni) -----------------------------------------
+  // Bu sütun olmadan giriş yapmış bir kullanıcının ifade edebildiği en dar kapsam ildi;
+  // dokümanlardaki ?applicable_to=district:<id> görünümü gerçek oturumdan ulaşılamıyordu.
+  console.log('\n[21b] v2.1 — kullanıcı ilçe kapsamı (users.district_id)');
+  // Başka bir ile ait ilçe (doğrulamanın gerçekten çalıştığını göstermek için).
+  const istanbulProv = provinces.json.data.find((p) => p.code === 34);
+  const istanbulDistricts = await req('GET', `/provinces/${istanbulProv.id}/districts?limit=100`, { token: admin });
+  const uskudarD = istanbulDistricts.json.data.find((d) => d.name === 'Üsküdar');
+  const marmaraR = regions.json.data.find((r) => r.code === 'marmara');
+
+  const districtUser = await req('POST', '/users', {
+    token: admin,
+    body: {
+      name: 'Çankaya Saha Sorumlusu', email: 'cankaya.saha@kizilay.org.tr',
+      password: 'Cankaya!2026', role: 'saha',
+      region_id: icAnadolu.id, province_id: ankara.id, district_id: cankaya.id,
+      must_change_password: false,
+    },
+  });
+  check('POST /users district_id kabul ediyor',
+    districtUser.status === 201 && districtUser.json.district_id === cankaya.id,
+    JSON.stringify(districtUser.json));
+  check('yanıtta district_name çözümleniyor', districtUser.json.district_name === 'Çankaya');
+  check('GET /users listesinde district_id ve district_name dönüyor',
+    (await req('GET', '/users?q=Çankaya', { token: admin })).json.data
+      .some((u) => u.district_id === cankaya.id && u.district_name === 'Çankaya'));
+
+  const foreignDistrictUser = await req('POST', '/users', {
+    token: admin,
+    body: {
+      name: 'Yanlış Kapsam', email: 'yanlis.kapsam@kizilay.org.tr', password: 'Yanlis!2026',
+      role: 'saha', province_id: ankara.id, district_id: uskudarD.id,
+    },
+  });
+  check('ilçe seçilen ile ait değilse 400',
+    foreignDistrictUser.status === 400 && /İlçe/.test(foreignDistrictUser.json.error.message),
+    JSON.stringify(foreignDistrictUser.json));
+  const districtWithoutProvince = await req('POST', '/users', {
+    token: admin,
+    body: {
+      name: 'İlsiz İlçe', email: 'ilsiz@kizilay.org.tr', password: 'Ilsiz!2026',
+      role: 'saha', district_id: cankaya.id,
+    },
+  });
+  check("district_id, province_id olmadan verilemez (400)",
+    districtWithoutProvince.status === 400 && /province_id/.test(districtWithoutProvince.json.error.message),
+    JSON.stringify(districtWithoutProvince.json));
+  check('geçersiz district_id 400', (await req('POST', '/users', {
+    token: admin,
+    body: {
+      name: 'Olmayan İlçe', email: 'olmayan@kizilay.org.tr', password: 'Olmayan!2026',
+      role: 'saha', province_id: ankara.id, district_id: 999999,
+    },
+  })).status === 400);
+
+  const movedUser = await req('PUT', `/users/${districtUser.json.id}`, {
+    token: admin,
+    body: { region_id: marmaraR.id, province_id: istanbulProv.id, district_id: uskudarD.id },
+  });
+  check('PUT /users/:id ilçe kapsamını güncelliyor',
+    movedUser.status === 200 && movedUser.json.district_id === uskudarD.id
+    && movedUser.json.district_name === 'Üsküdar', JSON.stringify(movedUser.json));
+  check('PUT ile de çelişkili ilçe reddediliyor (400)',
+    (await req('PUT', `/users/${districtUser.json.id}`, {
+      token: admin, body: { province_id: ankara.id, district_id: uskudarD.id },
+    })).status === 400);
+  check('ilçe kapsamı boşaltılabiliyor (null)',
+    (await req('PUT', `/users/${districtUser.json.id}`, {
+      token: admin, body: { province_id: istanbulProv.id, district_id: null },
+    })).json.district_id === null);
+  check('kullanıcı değişikliği denetim izinde district_id farkını taşıyor',
+    (await req('GET', `/audit-logs?entity=users&limit=100`, { token: admin })).json.data
+      .some((a) => a.action === 'update' && a.changes?.district_id));
+
+  // İlçe kapsamlı gerçek bir oturum, artık `applicable_to=district:` sorabiliyor.
+  const districtLogin = await req('POST', '/auth/login', {
+    body: { email: 'cankaya.saha@kizilay.org.tr', password: 'Cankaya!2026' },
+  });
+  check('ilçe kapsamlı kullanıcı giriş yapabiliyor',
+    districtLogin.status === 200 && districtLogin.json.user.district_id !== undefined,
+    JSON.stringify(districtLogin.json.user));
+
+  // --- must_change_password kapısı (yeni) -------------------------------
+  console.log('\n[21c] v2.1 — zorunlu şifre değişikliği kapısı');
+  const forcedUser = await req('POST', '/users', {
+    token: admin,
+    body: {
+      name: 'İlk Giriş Kullanıcısı', email: 'ilkgiris@kizilay.org.tr',
+      password: 'Gecici!2026', role: 'saha',
+    },
+  });
+  check('yönetici tarafından açılan hesap must_change_password = 1 ile geliyor',
+    forcedUser.status === 201 && forcedUser.json.must_change_password === 1,
+    JSON.stringify(forcedUser.json));
+  check('must_change_password:false ile açıkça devre dışı bırakılabiliyor',
+    districtUser.json.must_change_password === 0);
+
+  const forcedLogin = await req('POST', '/auth/login', {
+    body: { email: 'ilkgiris@kizilay.org.tr', password: 'Gecici!2026' },
+  });
+  check('bayraklı hesap GİRİŞ YAPABİLİYOR (kilit girişte değil, uçlarda)',
+    forcedLogin.status === 200 && !!forcedLogin.json.token);
+  check('giriş yanıtı must_change_password bayrağını bildiriyor',
+    forcedLogin.json.user.must_change_password === 1, JSON.stringify(forcedLogin.json.user));
+  const forcedToken = forcedLogin.json.token;
+
+  const blockedRead = await req('GET', '/persons', { token: forcedToken });
+  check('bayrak açıkken GET /persons 403 PASSWORD_CHANGE_REQUIRED',
+    blockedRead.status === 403 && blockedRead.json.error.code === 'PASSWORD_CHANGE_REQUIRED',
+    JSON.stringify(blockedRead.json));
+  check('hata mesajı Türkçe ve ne yapılacağını söylüyor',
+    /şifre/i.test(blockedRead.json.error.message) && /change-password/.test(blockedRead.json.error.message),
+    blockedRead.json.error.message);
+  check('bayrak açıkken yazma da engelleniyor (POST /field-activities 403)',
+    (await req('POST', '/field-activities', {
+      token: forcedToken,
+      body: { task_area_id: ta.id, activity_date: '2026-08-02', volunteer_count: 1, beneficiary_count: 1, province_id: ankara.id },
+    })).json.error?.code === 'PASSWORD_CHANGE_REQUIRED');
+  check('bayrak açıkken dokümanlar da engelleniyor (403)',
+    (await req('GET', '/documents', { token: forcedToken })).status === 403);
+  check('bayrak açıkken /health etkilenmiyor (token gerektirmez)',
+    (await req('GET', '/health')).status === 200);
+
+  const forcedMe = await req('GET', '/auth/me', { token: forcedToken });
+  check('bayrak açıkken GET /auth/me ÇALIŞIYOR (istemci sebebi öğrenebilmeli)',
+    forcedMe.status === 200 && forcedMe.json.must_change_password === 1,
+    JSON.stringify(forcedMe.json));
+
+  check('yanlış mevcut şifreyle değişiklik 401', (await req('POST', '/auth/change-password', {
+    token: forcedToken, body: { current_password: 'AlakasizSifre1', new_password: 'YeniGecerli!2026' },
+  })).status === 401);
+  check('mevcut şifre alanı zorunlu (400)', (await req('POST', '/auth/change-password', {
+    token: forcedToken, body: { new_password: 'YeniGecerli!2026' },
+  })).status === 400);
+  const weakNew = await req('POST', '/auth/change-password', {
+    token: forcedToken, body: { current_password: 'Gecici!2026', new_password: 'kisa1' },
+  });
+  check('kısa yeni şifre 400 WEAK_PASSWORD',
+    weakNew.status === 400 && weakNew.json.error.code === 'WEAK_PASSWORD');
+  const noDigit = await req('POST', '/auth/change-password', {
+    token: forcedToken, body: { current_password: 'Gecici!2026', new_password: 'yalnizcaharf' },
+  });
+  check('rakamsız yeni şifre 400 WEAK_PASSWORD (uzunluk tek başına yetmez)',
+    noDigit.status === 400 && noDigit.json.error.code === 'WEAK_PASSWORD',
+    JSON.stringify(noDigit.json));
+  const samePwd = await req('POST', '/auth/change-password', {
+    token: forcedToken, body: { current_password: 'Gecici!2026', new_password: 'Gecici!2026' },
+  });
+  check('yeni şifre mevcut şifreyle aynı olamaz (400)',
+    samePwd.status === 400 && /farklı/.test(samePwd.json.error.message), JSON.stringify(samePwd.json));
+  check('başarısız denemelerden sonra kapı hâlâ kapalı',
+    (await req('GET', '/persons', { token: forcedToken })).status === 403);
+
+  const changed = await req('POST', '/auth/change-password', {
+    token: forcedToken, body: { current_password: 'Gecici!2026', new_password: 'KalıcıSifre!2026' },
+  });
+  check('POST /auth/change-password 200', changed.status === 200 && changed.json.ok === true);
+  check('şifre değişikliğinden sonra AYNI token ile /persons açılıyor (yeniden giriş gerekmiyor)',
+    (await req('GET', '/persons', { token: forcedToken })).status === 200);
+  check('/auth/me artık must_change_password = 0',
+    (await req('GET', '/auth/me', { token: forcedToken })).json.must_change_password === 0);
+  check('eski şifreyle giriş artık başarısız (401)',
+    (await req('POST', '/auth/login', {
+      body: { email: 'ilkgiris@kizilay.org.tr', password: 'Gecici!2026' },
+    })).status === 401);
+  const newPwdLogin = await req('POST', '/auth/login', {
+    body: { email: 'ilkgiris@kizilay.org.tr', password: 'KalıcıSifre!2026' },
+  });
+  check('yeni şifreyle giriş 200 + bayrak düşmüş',
+    newPwdLogin.status === 200 && newPwdLogin.json.user.must_change_password === 0);
+  check('şifre değişikliği denetim izine düşüyor (şifre metni YAZILMADAN)',
+    (await req('GET', '/audit-logs?entity=users&limit=200', { token: admin })).json.data
+      .some((a) => a.entity_id === forcedUser.json.id && a.action === 'password_change'
+        && a.changes?.password === 'değiştirildi'
+        && !JSON.stringify(a.changes).includes('KalıcıSifre')));
+
+  // Yönetici sıfırlaması bayrağı YENİDEN kurar: yeni şifreyi yönetici biliyor.
+  await req('PUT', `/users/${forcedUser.json.id}/password`, {
+    token: admin, body: { password: 'YoneticiSifresi!2026' },
+  });
+  const adminReset = await req('POST', '/auth/login', {
+    body: { email: 'ilkgiris@kizilay.org.tr', password: 'YoneticiSifresi!2026' },
+  });
+  check('yönetici şifre sıfırlaması bayrağı YENİDEN kuruyor',
+    adminReset.json.user.must_change_password === 1, JSON.stringify(adminReset.json.user));
+  check('sıfırlama sonrası kapı tekrar kapalı',
+    (await req('GET', '/persons', { token: adminReset.json.token })).status === 403);
+
   console.log('\n[22] v2 — üç durumlu statü (K3) geriye dönük uyum');
   const statusPerson = await req('PATCH', `/persons/${pid}/status`, { token: admin, body: { status: 'teskilat_yok' } });
   check('PATCH /persons/:id/status → teskilat_yok', statusPerson.status === 200 && statusPerson.json.status === 'teskilat_yok');
@@ -1012,6 +1322,37 @@ try {
     && docWithFiles.json.attachments[0].file_name === 'gonullu-el-kitabi.pdf'
     && docWithFiles.json.attachments[0].download_url.endsWith(`/attachments/${docUpJson.id}/download`));
   check('attachment_count listede de görünüyor', docWithFiles.json.attachment_count === 1);
+
+  // --- Kompakt dosya özeti (`files`) — istemci ikinci istek atmasın -----
+  // Önceden liste yalnız attachment_count döndürüyordu; Flutter liste ekranı dosya
+  // türü ve boyutu için ayrıca GET /attachments?entity=documents çağırmak zorundaydı.
+  const listWithFiles = await req('GET', `/documents?province_id=${ankara.id}&limit=50`, { token: admin });
+  const rowWithFile = listWithFiles.json.data.find((d) => d.id === docIl.json.id);
+  check('GET /documents satırında files özeti dönüyor',
+    Array.isArray(rowWithFile?.files) && rowWithFile.files.length === 1,
+    JSON.stringify(rowWithFile?.files));
+  check('files girdisi {id, mime, size, file_name} taşıyor',
+    rowWithFile.files[0].id === docUpJson.id
+    && rowWithFile.files[0].file_name === 'gonullu-el-kitabi.pdf'
+    && rowWithFile.files[0].mime === 'application/pdf'
+    && rowWithFile.files[0].size === pdfBytes.length,
+    JSON.stringify(rowWithFile.files[0]));
+  check('files özeti fazladan alan taşımıyor (kompakt)',
+    Object.keys(rowWithFile.files[0]).sort().join(',') === 'file_name,id,mime,size',
+    Object.keys(rowWithFile.files[0]).join(','));
+  check('attachment_count geriye dönük uyum için KORUNDU',
+    rowWithFile.attachment_count === 1);
+  check('eki olmayan doküman files: [] döndürüyor',
+    listWithFiles.json.data.filter((d) => d.id !== docIl.json.id)
+      .every((d) => Array.isArray(d.files) && d.files.length === 0),
+    JSON.stringify(listWithFiles.json.data.map((d) => [d.id, d.files?.length])));
+  check('tek kayıt yanıtında files ve attachments birlikte dönüyor',
+    docWithFiles.json.files?.length === 1 && docWithFiles.json.attachments?.length === 1);
+  check('saha da files özetini görüyor',
+    (await req('GET', `/documents?province_id=${ankara.id}&limit=50`, { token: saha })).json.data
+      .find((d) => d.id === docIl.json.id)?.files?.length === 1);
+  check('boş liste files eklerken patlamıyor',
+    (await req('GET', '/documents?q=kesinlikleboyleb%C4%B1rsey&limit=50', { token: admin })).json.data.length === 0);
 
   const delDoc = await req('DELETE', `/documents/${docIl.json.id}`, { token: admin });
   check('DELETE /documents/:id 204 (genel_merkez)', delDoc.status === 204);

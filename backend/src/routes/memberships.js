@@ -4,6 +4,7 @@ import { auditLog } from '../audit.js';
 import {
   badRequest, notFound, pagination, parseBoolFlag, requireFields, toIntOrThrow,
 } from '../helpers.js';
+import { maskTcNo } from '../tc.js';
 
 const PERSON_SELECT = `p.id, p.first_name, p.last_name, p.tc_no, p.birth_date, p.phone, p.email,
   p.profession, p.unit_type, p.province_id, p.district_id, p.status AS person_status,
@@ -38,7 +39,10 @@ export default function membershipRoutes(db) {
           id: row.id,
           first_name: row.first_name,
           last_name: row.last_name,
-          tc_no: row.tc_no,
+          // KVKK (Y-1): üye listesi de bir listedir; TC maskelenir.
+          // Tam numara yalnız `GET /persons/:id` üzerinden ve yalnız genel merkeze açıktır.
+          tc_no: maskTcNo(row.tc_no),
+          tc_masked: 1,
           birth_date: row.birth_date,
           phone: row.phone,
           email: row.email,

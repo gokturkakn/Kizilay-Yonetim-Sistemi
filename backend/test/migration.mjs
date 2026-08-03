@@ -264,6 +264,29 @@ check('users.is_active / region_id / province_id sütunları eklendi', (() => {
   return ['is_active', 'region_id', 'province_id', 'updated_at'].every((c) => cols.includes(c));
 })());
 
+// --- 013: kullanıcı ilçe kapsamı + zorunlu şifre değişikliği bayrağı ---
+const userCols = db.prepare('PRAGMA table_info(users)').all();
+const userColNames = userCols.map((c) => c.name);
+check('users.district_id sütunu eklendi (013)', userColNames.includes('district_id'));
+check('users.must_change_password sütunu eklendi (013)', userColNames.includes('must_change_password'));
+check('district_id NULL kabul ediyor (kapsamsız hesap geçerlidir)',
+  userCols.find((c) => c.name === 'district_id')?.notnull === 0);
+// Yükseltmede kimse kilitlenmemeli: v1'den gelen hesaplar bayraksız gelir.
+check('mevcut (v1) hesaplar must_change_password = 0 ile geliyor — kimse kilitlenmez',
+  db.prepare('SELECT COUNT(*) AS c FROM users WHERE must_change_password <> 0').get().c === 0);
+check('district_id yabancı anahtarı districts tablosuna bağlı', (() => {
+  const fks = db.pragma('foreign_key_list(users)');
+  return fks.some((f) => f.from === 'district_id' && f.table === 'districts');
+})());
+check('users.district_id gerçekten yazılabiliyor ve okunabiliyor', (() => {
+  db.prepare('UPDATE users SET province_id = 1, district_id = 1 WHERE id = 2').run();
+  const row = db.prepare('SELECT province_id, district_id FROM users WHERE id = 2').get();
+  db.prepare('UPDATE users SET province_id = NULL, district_id = NULL WHERE id = 2').run();
+  return row.province_id === 1 && row.district_id === 1;
+})());
+check('idx_users_district indeksi oluştu',
+  db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_users_district'").get() !== undefined);
+
 // --------------------------------------------------------------------------
 // 4. Göç idempotent mi?
 // --------------------------------------------------------------------------
@@ -318,6 +341,15 @@ check("il/ilçe başkanlıkları 'teskilat_yok' ile geldi (boşluk raporu anlaml
 
 check('tohumlama v1 kişilerine dokunmadı',
   db.prepare('SELECT COUNT(*) AS c FROM persons').get().c === before.persons);
+// v1'den yükselen `saha` hesabına da coğrafya verilir (boş olduğu sürece).
+check('yükseltilen saha hesabına Ankara/Çankaya kapsamı verildi', (() => {
+  const u = db.prepare("SELECT province_id, district_id FROM users WHERE email = 'saha@kizilay.org.tr'").get();
+  const ank = db.prepare("SELECT id FROM provinces WHERE name = 'Ankara'").get();
+  const cnk = db.prepare('SELECT id FROM districts WHERE province_id = ? AND name = ?').get(ank.id, 'Çankaya');
+  return u.province_id === ank.id && u.district_id === cnk.id;
+})());
+check('yükseltmede tohumlanan hesaplar kilitli gelmiyor (must_change_password = 0)',
+  db.prepare('SELECT COUNT(*) AS c FROM users WHERE must_change_password = 1').get().c === 0);
 check('tohumlama sonrası da yabancı anahtar ihlali yok', db.pragma('foreign_key_check').length === 0);
 
 db.close();

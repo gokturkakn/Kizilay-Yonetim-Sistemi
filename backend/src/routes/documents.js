@@ -194,6 +194,33 @@ export default function documentRoutes(db) {
     return row;
   }
 
+  /**
+   * Liste satırlarına kompakt dosya özeti ekler.
+   *
+   * Önceden liste yalnız `attachment_count` döndürüyordu; istemci dosya türünü ve
+   * boyutunu göstermek için ayrıca `GET /attachments?entity=documents` çağırmak
+   * zorundaydı — mobil şebekede sayfa başına ikinci bir gidiş-dönüş. Tek bir
+   * `IN (...)` sorgusuyla toplanır (satır başına sorgu YOK, N+1 üretmez).
+   *
+   * `attachment_count` KALDIRILMADI: mevcut istemciler onu okuyor (geriye dönük uyum).
+   */
+  function withFiles(rows) {
+    if (rows.length === 0) return rows;
+    const ids = rows.map((row) => row.id);
+    const files = db.prepare(`
+      SELECT a.entity_id, a.id, a.mime, a.size, a.file_name
+      FROM attachments a
+      WHERE a.entity = 'documents' AND a.entity_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY a.id`).all(...ids);
+    const byDocument = new Map();
+    for (const f of files) {
+      const list = byDocument.get(f.entity_id) || [];
+      list.push({ id: f.id, mime: f.mime, size: f.size, file_name: f.file_name });
+      byDocument.set(f.entity_id, list);
+    }
+    return rows.map((row) => ({ ...row, files: byDocument.get(row.id) || [] }));
+  }
+
   const listAttachments = (documentId) => db.prepare(`
     SELECT ${ATTACHMENT_SELECT} FROM attachments a
     LEFT JOIN users u ON u.id = a.uploaded_by
@@ -283,16 +310,19 @@ export default function documentRoutes(db) {
       const orderBy = applicable
         ? `scope_rank, COALESCE(d.published_at, '0000-00-00') DESC, d.id DESC`
         : "COALESCE(d.published_at, '0000-00-00') DESC, d.id DESC";
-      res.json(listQuery(db, {
+      const result = listQuery(db, {
         select: SELECT, from: FROM, where, params, orderBy, query: req.query,
-      }));
+      });
+      res.json({ ...result, data: withFiles(result.data) });
     } catch (e) { next(e); }
   });
 
   r.get('/documents/:id', (req, res, next) => {
     try {
       const row = getVisible(req, req.params.id);
-      res.json({ ...row, attachments: listAttachments(row.id) });
+      // Tek kayıtta `attachments` (tam model) ve `files` (kompakt özet) birlikte döner;
+      // liste ve detay ekranı aynı alanı okuyabilsin diye.
+      res.json({ ...withFiles([row])[0], attachments: listAttachments(row.id) });
     } catch (e) { next(e); }
   });
 

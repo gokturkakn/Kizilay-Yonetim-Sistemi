@@ -17,6 +17,23 @@ export function isValidTcNo(value) {
   return d[10] === d11;
 }
 
+/**
+ * KVKK maskeleme (denetim raporu Y-1) — `12345678901` → `123******01`.
+ *
+ * TC kimlik numarası kimlik doğrulayıcı bir veridir; liste ekranlarında ve toplu
+ * raporlarda tam görünmesi için hiçbir işlevsel gerekçe yoktur. İlk 3 ve son 2 hane
+ * korunur: kullanıcı elindeki kaydı tanıyabilir, ama numara yeniden üretilemez.
+ *
+ * Beklenmedik uzunluktaki bir değer (bozuk veri) tamamen yıldızlanır — kısmi sızıntı
+ * riskini almamak için.
+ */
+export function maskTcNo(value) {
+  if (value === null || value === undefined || value === '') return value;
+  const s = String(value);
+  if (s.length !== 11) return '*'.repeat(s.length);
+  return `${s.slice(0, 3)}******${s.slice(9)}`;
+}
+
 // İlk 9 haneden geçerli bir TC numarası tamamlar (demo/tohum veri için).
 export function completeTcNo(first9) {
   if (!/^[1-9][0-9]{8}$/.test(first9)) {

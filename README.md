@@ -42,11 +42,28 @@ Android/iOS derlemesi için ilgili SDK'lar kurulduktan sonra `flutter build apk`
 API adresi `app/lib/core/config.dart` içinde; farklı sunucu için
 `--dart-define=API_BASE_URL=...` verilebilir.
 
-### 3. Giriş Bilgileri (tohum kullanıcılar — üründe değiştirin)
-| Rol | E-posta | Şifre |
-|---|---|---|
-| Genel Merkez | admin@kizilay.org.tr | Admin!2026 |
-| Saha | saha@kizilay.org.tr | Saha!2026 |
+### 3. Giriş Bilgileri
+
+**Bu depoda çalışan hiçbir şifre yayımlanmaz.** Giriş hesapları ortama göre değişir:
+
+| Ortam | Hesaplar |
+|---|---|
+| **Yerel geliştirme** (varsayılan) | İki tohum hesabı otomatik açılır. E-posta/şifre çiftleri `backend/README.md` içindedir ve **yalnızca yerel geliştirme içindir** — üretim benzeri bir ortamda bu hesaplar oluşturulmaz. |
+| **Üretim / üretim benzeri** | Hiçbir varsayılan hesap açılmaz. İlk yönetici, sunucu bir kez `KK_SEED_ADMIN_EMAIL` + `KK_SEED_ADMIN_PASSWORD` ile başlatılarak oluşturulur. |
+
+Ortamın "üretim benzeri" sayılması: `NODE_ENV=production`, `RENDER` tanımlı ya da
+`KK_ENV=production` (Render bunların ikisini de verir). Bu ortamda ayrıca
+`KK_JWT_SECRET` **zorunludur** — yoksa ya da 32 karakterden kısaysa sunucu açılmaz.
+
+İlk yönetici hesabı `must_change_password` bayrağıyla açılır: ilk girişten sonra
+`POST /auth/change-password` çağrılmadan başka hiçbir uç kullanılamaz. Hesap
+oluştuktan sonra `KK_SEED_ADMIN_*` değişkenlerini ortamdan **kaldırın**.
+
+Tüm ortam değişkenleri ve açıklamaları: `backend/.env.example`.
+
+> **Canlıya çıkmış bir kurulumunuz varsa:** bu depoda daha önce yayımlanmış olan
+> tohum şifreleri geçerli olabilir. `PUT /users/:id/password` ile sıfırlayın ve
+> `KK_JWT_SECRET` değerini değiştirin (mevcut tüm oturumlar geçersiz olur).
 
 ## Belgeler
 - [docs/SPEC.md](docs/SPEC.md) — v1 ürün kapsamı
@@ -60,7 +77,20 @@ API adresi `app/lib/core/config.dart` içinde; farklı sunucu için
 ## Üretime Çıkış Notları
 - `npm run db:reset` ile demo/test kayıtlarını temizleyin; `/health` çıktısında kişi
   sayısının 0 olduğunu doğrulayın. `KK_SEED_DEMO` **ayarlanmamış** olmalı.
-- `KK_JWT_SECRET` ortam değişkenini mutlaka değiştirin.
+  (Dolu bir veritabanında `KK_SEED_DEMO=1` artık sessizce yok sayılmaz; atlandığını
+  ve nasıl sıfırlanacağını konsola yazar.)
+- `KK_JWT_SECRET` **zorunludur**; en az 32 karakter, rastgele üretilmiş olmalı:
+  `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
+  Eksik/zayıfsa sunucu açılmaz (fail-fast), sessizce varsayılana düşmez.
+- İlk yöneticiyi `KK_SEED_ADMIN_EMAIL` + `KK_SEED_ADMIN_PASSWORD` ile bir kez açın,
+  sonra bu değişkenleri kaldırın.
+- Giriş hız sınırlaması varsayılan olarak açıktır (hesap başına 5, IP başına 20
+  başarısız deneme → 15 dakika kilit). Sayaçlar **süreç belleğindedir**: birden çok
+  sunucu örneği çalıştırılırsa paylaşımlı bir sayaca (Redis) taşınmalıdır.
+- TC kimlik numaraları liste yanıtlarında ve raporlarda **maskelidir**
+  (`123******01`). Tam numara yalnız `GET /persons/:id` üzerinden `genel_merkez`e ve
+  `GET /export/persons.*?unmasked=1` ile gelir; maskesiz çıktı denetim izine düşer.
+  **Kalan iş:** numara veritabanında hâlâ açık metindir (at-rest şifreleme yapılmadı).
 - SQLite dosyası `backend/data/app.db`; yedekleyin. PostgreSQL'e geçiş şeması uyumludur.
 - Gerçek teşkilat üyeleri Excel'den `POST /api/v1/persons/import` ile toplu yüklenebilir.
 - Görev alanları listesi (`task-areas`) genel merkez rolüyle genişletilebilir.
@@ -69,6 +99,11 @@ API adresi `app/lib/core/config.dart` içinde; farklı sunucu için
 
 ## Testler
 ```bash
-cd backend && npm test        # 9 tohum modu + 51 duman testi (API uçtan uca)
+cd backend && npm test        # 562 kontrol, dört paket:
+                              #   73 göç · 48 tohum modu · 384 duman · 57 güvenlik
 cd app && flutter test        # 16 birim/widget testi
 ```
+Güvenlik paketi (`backend/test/security.mjs`) üretim benzeri ortamı gerçekten
+canlandırır: sunucuyu farklı ortam değişkenleriyle başlatır, açılmayı reddetmesini,
+tohum hesabı açmamasını, zorunlu şifre değişikliği kapısını ve giriş kilidinin hem
+devreye girmesini hem çözülmesini ölçer.

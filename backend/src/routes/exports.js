@@ -7,6 +7,8 @@ import { Router } from 'express';
 import ExcelJS from 'exceljs';
 import { requireRole } from '../auth.js';
 import { notFound } from '../helpers.js';
+import { auditLog } from '../audit.js';
+import { maskTcNo } from '../tc.js';
 import { REPORTS, filterSummary } from '../reports.js';
 import { sendPdfTable } from '../pdf.js';
 
@@ -23,6 +25,12 @@ async function sendWorkbook(res, filename, sheetName, columns, rows) {
   res.end();
 }
 
+/** `?unmasked=1` / `?unmasked=true` → maskesiz çıktı talebi. */
+function wantsUnmasked(query) {
+  const v = String(query.unmasked ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true';
+}
+
 export default function exportRoutes(db) {
   const r = Router();
 
@@ -34,7 +42,39 @@ export default function exportRoutes(db) {
       const spec = REPORTS[req.params.report];
       if (!spec) throw notFound(`Bilinmeyen rapor: ${req.params.report}`);
 
-      const rows = spec.build(db, req.query);
+      let rows = spec.build(db, req.query);
+
+      // ---------------------------------------------------------------- KVKK
+      // Denetim Y-1: TC numaraları raporlara maskesiz iniyordu ve dosya cihazda
+      // korumasız duruyordu. Artık VARSAYILAN maskelidir; maskesiz çıktı bilinçli
+      // bir tercihtir (`?unmasked=1`), yalnız `genel_merkez` alabilir (bu yönlendirici
+      // zaten yalnız ona açık) ve MUTLAKA denetim izine düşer — "kim, ne zaman, hangi
+      // filtreyle kimlik verisi indirdi" sorusu cevaplanabilir olmalıdır.
+      const unmasked = wantsUnmasked(req.query);
+      if (spec.sensitiveFields?.length) {
+        if (!unmasked) {
+          rows = rows.map((row) => {
+            const copy = { ...row };
+            for (const f of spec.sensitiveFields) copy[f] = maskTcNo(copy[f]);
+            return copy;
+          });
+        } else {
+          const { unmasked: _drop, ...filters } = req.query;
+          auditLog(db, {
+            entity: 'exports',
+            entityId: 0, // rapor bir satır değildir; entity_id NOT NULL olduğu için 0.
+            action: 'export_unmasked',
+            changedBy: req.user.id,
+            changes: {
+              report: req.params.report,
+              format: req.params.format,
+              fields: spec.sensitiveFields,
+              row_count: rows.length,
+              filters,
+            },
+          });
+        }
+      }
 
       if (req.params.format === 'pdf') {
         sendPdfTable(res, {

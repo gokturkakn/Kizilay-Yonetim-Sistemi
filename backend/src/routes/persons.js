@@ -3,7 +3,7 @@ import multer from 'multer';
 import ExcelJS from 'exceljs';
 import { requireRole } from '../auth.js';
 import { auditLog, diffChanges } from '../audit.js';
-import { isValidTcNo } from '../tc.js';
+import { isValidTcNo, maskTcNo } from '../tc.js';
 import {
   badRequest, conflict, notFound, listQuery, parseBoolFlag,
   requireFields, EMAIL_RE, validDate, toIntOrThrow,
@@ -29,6 +29,33 @@ const FROM_PERSON = `persons p
   JOIN provinces pr ON pr.id = p.province_id
   LEFT JOIN regions r ON r.id = pr.region_id
   LEFT JOIN districts d ON d.id = p.district_id`;
+
+/**
+ * KVKK maskeleme kuralı (denetim raporu Y-1).
+ *
+ *   • LİSTE yanıtlarında TC HER ZAMAN maskelidir — rol farketmez. Ekranda yüzlerce
+ *     numaranın aynı anda durmasının hiçbir işlevsel karşılığı yok; toplu sızıntının
+ *     en kolay yolu buydu.
+ *   • TEK KAYIT (`GET /persons/:id`) yanıtında tam numarayı yalnız `genel_merkez` görür.
+ *     Kişi kartında numarayı doğrulamak gerçek bir ihtiyaçtır; `saha` için değildir.
+ *   • Yazma yanıtları (POST/PUT/PATCH) yalnız `genel_merkez`e açıktır; gönderdiği
+ *     değeri geri okuyabilmesi için maskelenmez.
+ *
+ * `tc_masked` alanı istemcinin "bu değer eksik mi" sorusunu tahmine bırakmaması içindir.
+ *
+ * KALAN İŞ: numara veritabanında hâlâ AÇIK metindir. Diskte şifreleme (at-rest) bu
+ * turun kapsamı dışında bırakılmıştır; anahtar yönetimi gerektirir ve şemayı etkiler.
+ */
+function withMaskedTc(row) {
+  if (!row) return row;
+  return { ...row, tc_no: maskTcNo(row.tc_no), tc_masked: 1 };
+}
+
+function personForRole(row, req) {
+  if (!row) return row;
+  if (req.user?.role === 'genel_merkez') return { ...row, tc_masked: 0 };
+  return withMaskedTc(row);
+}
 
 function resolveStatus(body, currentStatus) {
   if (body.status !== undefined && body.status !== null && body.status !== '') {
@@ -128,13 +155,15 @@ export default function personRoutes(db) {
         const like = `%${q}%`;
         params.push(like, like, like);
       }
-      res.json(listQuery(db, {
+      const result = listQuery(db, {
         select: SELECT_PERSON,
         from: FROM_PERSON,
         where, params,
         orderBy: 'p.last_name, p.first_name',
         query: req.query,
-      }));
+      });
+      // Liste yanıtında TC her rol için maskelidir (KVKK — Y-1).
+      res.json({ ...result, data: result.data.map(withMaskedTc) });
     } catch (e) { next(e); }
   });
 
@@ -142,7 +171,7 @@ export default function personRoutes(db) {
     try {
       const row = getPerson(req.params.id);
       if (!row) throw notFound('Kişi bulunamadı');
-      res.json(row);
+      res.json(personForRole(row, req));
     } catch (e) { next(e); }
   });
 
@@ -156,7 +185,7 @@ export default function personRoutes(db) {
                 @unit_type, @province_id, @district_id, @status, @start_date, @end_date, @notes)`).run(p);
       const row = getPerson(lastInsertRowid);
       auditLog(db, { entity: 'persons', entityId: row.id, action: 'create', changedBy: req.user.id, changes: p });
-      res.status(201).json(row);
+      res.status(201).json(personForRole(row, req));
     } catch (e) { next(e); }
   });
 
@@ -180,7 +209,7 @@ export default function personRoutes(db) {
         entity: 'persons', entityId: before.id, action: 'update', changedBy: req.user.id,
         changes: diffChanges(before, after, PERSON_FIELDS),
       });
-      res.json(after);
+      res.json(personForRole(after, req));
     } catch (e) { next(e); }
   });
 
@@ -197,7 +226,7 @@ export default function personRoutes(db) {
         entity: 'persons', entityId: before.id, action: 'active_toggle', changedBy: req.user.id,
         changes: { status: { old: before.status, new: status } },
       });
-      res.json(after);
+      res.json(personForRole(after, req));
     } catch (e) { next(e); }
   });
 
@@ -213,7 +242,7 @@ export default function personRoutes(db) {
         entity: 'persons', entityId: before.id, action: 'status_change', changedBy: req.user.id,
         changes: { status: { old: before.status, new: status } },
       });
-      res.json(after);
+      res.json(personForRole(after, req));
     } catch (e) { next(e); }
   });
 

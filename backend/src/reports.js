@@ -54,6 +54,10 @@ export const REPORTS = {
   persons: {
     title: 'Kişiler',
     filename: 'kisiler',
+    // KVKK (denetim Y-1): rapor VARSAYILAN OLARAK maskeli üretilir. Tam numara yalnız
+    // `?unmasked=1` ile ve yalnız `genel_merkez` için gelir; o çıktı denetim izine düşer.
+    // Maskeleme `src/routes/exports.js` içinde tek yerden uygulanır.
+    sensitiveFields: ['tc_no'],
     columns: [
       { header: 'Ad', key: 'first_name', width: 18 },
       { header: 'Soyad', key: 'last_name', width: 18 },
