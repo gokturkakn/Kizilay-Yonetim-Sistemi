@@ -130,6 +130,7 @@ class AttachmentController extends ChangeNotifier {
         kind: item.kind,
         fileName: item.file.name,
         bytes: item.file.bytes,
+        mime: item.file.mime,
       );
       item.state = UploadState.tamam;
       existing.add(uploaded);

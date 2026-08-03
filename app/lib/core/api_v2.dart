@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../models/models_v2.dart';
 import 'api_client.dart';
 import 'document_filter.dart';
+import 'filepick/file_pick.dart';
 
 /// docs/API-V2.md sözleşmesinin tipli sarmalayıcısı.
 ///
@@ -501,16 +502,23 @@ class ApiV2 {
     return PagedRaw.of(resp).rows.map(Attachment.fromJson).toList();
   }
 
+  /// [mime] boş bırakılırsa uzantıdan türetilir; sunucu beyaz listesi parçanın
+  /// `Content-Type` başlığına baktığı için tür **her hâlükârda** gönderilir
+  /// (API-V2 §9).
   Future<Attachment> uploadAttachment({
     required String entity,
     required int entityId,
     required String kind,
     required String fileName,
     required List<int> bytes,
+    String? mime,
   }) async {
     final resp = await client.postMultipart('/attachments',
         bytes: bytes,
         fileName: fileName,
+        contentType: (mime == null || mime.isEmpty)
+            ? AttachmentRules.mimeForFileName(fileName)
+            : mime,
         fields: {
           'entity': entity,
           'entity_id': '$entityId',
@@ -563,8 +571,10 @@ class ApiV2 {
       client.put('/documents/$id', body);
 
   /// Yayından kaldırma / yayına alma — **silme değildir** (§19.4).
+  /// Gövdede **bool** gider: sunucunun `parseBoolFlag` işlevi JSON sayısını
+  /// (`1`) kabul etmez, `true`/`false` ya da `"1"`/`"0"` bekler.
   Future<void> setDocumentActive(int id, bool isActive) =>
-      client.patch('/documents/$id/active', {'is_active': isActive ? 1 : 0});
+      client.patch('/documents/$id/active', {'is_active': isActive});
 
   Future<void> deleteDocument(int id) => client.delete('/documents/$id');
 

@@ -1,6 +1,7 @@
 @Tags(['live'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -414,8 +415,13 @@ void main() {
       (tester) async {
     skipIfDown();
     if (!backendUp) return;
-    final page = await api2.documents(const {});
-    final expired = page.data.firstWhere((d) => d.isExpired);
+    // testWidgets sahte zaman kullanır; gerçek HTTP yalnız runAsync içinde
+    // ilerler (yukarıdaki E-49 sınamasının aynısı).
+    late DocumentRecord expired;
+    await tester.runAsync(() async {
+      final page = await api2.documents(const {});
+      expired = page.data.firstWhere((d) => d.isExpired);
+    });
 
     await tester.pumpWidget(MaterialApp(
       theme: buildAppTheme(),
@@ -442,7 +448,8 @@ void main() {
     final doc = page.data.first;
 
     // Tohumda doküman eki yok; indirme yolu gerçek bir dosyayla sınanır.
-    final bytes = List<int>.generate(64, (i) => i);
+    // Tür `Content-Type` başlığından okunur — uzantı tek başına yetmez.
+    final bytes = utf8.encode('%PDF-1.4\n% canlı sınama\n%%EOF\n');
     final uploaded = await api2.uploadAttachment(
       entity: 'documents',
       entityId: doc.id,
@@ -450,6 +457,7 @@ void main() {
       fileName: 'canli-sinama.pdf',
       bytes: bytes,
     );
+    expect(uploaded.mime, 'application/pdf');
     expect(uploaded.id, greaterThan(0));
 
     final before = (await api2.document(doc.id)).downloadCount;

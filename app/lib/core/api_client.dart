@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
 
 import 'config.dart';
 import 'strings.dart';
@@ -86,11 +87,16 @@ class ApiClient {
   }
 
   /// Çok parçalı yükleme (dosya ekleri — API-V2 §9).
+  ///
+  /// [contentType] **gönderilmelidir**: sunucu beyaz listesi parçanın
+  /// `Content-Type` başlığına bakar ve `http` paketinin varsayılanı
+  /// (`application/octet-stream`) her yüklemeyi 400 ile reddettirir.
   Future<dynamic> postMultipart(
     String path, {
     required List<int> bytes,
     required String fileName,
     required Map<String, String> fields,
+    String? contentType,
   }) async {
     http.Response resp;
     try {
@@ -98,7 +104,14 @@ class ApiClient {
       request.headers.addAll(_headers(json: false));
       request.fields.addAll(fields);
       request.files.add(
-        http.MultipartFile.fromBytes('file', bytes, filename: fileName),
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: fileName,
+          contentType: contentType == null || contentType.isEmpty
+              ? null
+              : MediaType.parse(contentType),
+        ),
       );
       final streamed = await _client.send(request);
       resp = await http.Response.fromStream(streamed);

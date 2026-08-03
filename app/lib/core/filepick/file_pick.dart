@@ -51,6 +51,27 @@ class AttachmentRules {
   static List<String> acceptFor(String kind) =>
       extensionsFor(kind).map((e) => '.$e').toList();
 
+  /// Uzantı → MIME. Sunucudaki beyaz listeyle **birebir** aynıdır (API-V2 §9);
+  /// tarayıcı/işletim sistemi tür bildirmediğinde yedek kaynaktır.
+  static const mimeByExtension = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'webp': 'image/webp',
+    'gif': 'image/gif',
+    'pdf': 'application/pdf',
+    'docx':
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xlsx':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  };
+
+  static String? mimeForFileName(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot < 0) return null;
+    return mimeByExtension[fileName.substring(dot + 1).toLowerCase()];
+  }
+
   /// Dosyayı doğrular; sorun yoksa `null` döner (metinler §7.2'den aynen).
   static String? validate(PickedFile file, String kind) {
     if (file.size == 0) return 'Dosya boş görünüyor. Başka bir dosya seçin.';
