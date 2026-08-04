@@ -26,6 +26,8 @@ export const LOOKUP_CATEGORIES = [
   // SPEC-V2-M6 §2.1 — doküman TÜRÜ. Kapsam (genel/bölge/il/ilçe) ayrı bir eksendir,
   // kategori değildir; bkz. src/routes/documents.js.
   { code: 'dokuman_kategorisi', name: 'Doküman Kategorisi' },
+  // SPEC-V2 §3.2E — Gelir Getirici Faaliyetler.
+  { code: 'gelir_getirici_faaliyet_turu', name: 'Faaliyet Türü' },
 ];
 
 // SPEC-V2 §3.2A — 12 ana görev başlığı.
@@ -80,6 +82,23 @@ const EGITIM_KONULARI = [
   'Kızılay Tarihi ve Kurum Kültürü',
   'Uluslararası İnsancıl Hukuk ve Temel İlkeler',
   'Yangın Güvenliği ve Tahliye',
+];
+
+// SPEC-V2 §3.2E — 13 hazır gelir getirici faaliyet türü.
+const GELIR_GETIRICI_FAALIYET_TURLERI = [
+  'Kermes',
+  'Sergi',
+  'Müzayede',
+  'Çay / Kahvaltı Programı',
+  'Hayır Yemeği',
+  'Konser',
+  'Kermes Standı',
+  'Satış Kampanyası',
+  'Bağış Kampanyası',
+  'Kurumsal Sponsorluk',
+  'Bireysel Bağış',
+  'Online Bağış Kampanyası',
+  'Diğer',
 ];
 
 // SPEC-V2 §3.3 — lojistik ürünleri (birebir).
@@ -137,6 +156,8 @@ export const LOOKUP_ITEMS = {
     'Proje Dokümanları',
     'Yönetsel Dokümanlar',
   ],
+
+  gelir_getirici_faaliyet_turu: GELIR_GETIRICI_FAALIYET_TURLERI,
 };
 
 /** kategori kodu → { ebeveyn kalem adı: [alt kalem adları] } */
@@ -153,4 +174,5 @@ export const EXPECTED_ITEM_COUNTS = {
   lojistik_urun: 15,
   bolge: 7,
   dokuman_kategorisi: 4,
+  gelir_getirici_faaliyet_turu: 13,
 };

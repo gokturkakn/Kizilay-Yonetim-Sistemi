@@ -379,6 +379,47 @@ gönderilemez (400), "Çevrim İçi" ise `location` gönderilemez (400).
   sözleşme **gevşetildi**, v1 istemcisi etkilenmez.)*
 - `PUT /meetings/:id` · `DELETE /meetings/:id` *(genel_merkez)*
 
+### 6.5 Gelir Getirici Faaliyetler — `/income-activities` (§3.2E)
+Görev/Eğitim/Etkinlik/Toplantı'nın **kardeşi, ama AYRI bir modüldür**: kendi mali sonucu
+(gelir/gider/net) olan tek faaliyet türü budur. `net_income` fiziksel bir sütun değildir,
+her yanıtta `income_amount - expense_amount` olarak hesaplanır.
+```jsonc
+{
+  "id": 1,
+  "name": "2026 Ramazan Kermesi",         // Faaliyet Adı
+  "activity_type_id": 109,                // lookup_items(gelir_getirici_faaliyet_turu) — 13 hazır tür
+  "purpose": "Kaynak geliştirme",         // Amaç
+  "activity_date": "2026-03-15",
+  "region_id": 1, "province_id": 6, "district_id": 25,
+  "org_unit_id": 96,                      // Düzenleyen Kadın Teşkilatı
+  "location": "Çankaya Kültür Merkezi",   // Faaliyet Yeri
+  "target_income": 50000,                 // Hedeflenen Gelir — İSTEĞE BAĞLI
+  "income_amount": 62000,                 // Gelir Tutarı (TL) — ZORUNLU
+  "expense_amount": 8000,                 // Gider Tutarı (TL) — İSTEĞE BAĞLI
+  "net_income": 54000,                    // OTOMATIK HESAPLANIR — income_amount − expense_amount
+  "participant_count": 300, "volunteer_count": 25,
+  "supporting_orgs": "Çankaya Ticaret Odası",   // Destek Veren Kurum/Kuruluşlar
+  "sponsors": "ABC Gıda",
+  "notes": "…", "attachment_count": 2,    // fotoğraf / doküman
+  "activity_type_name": "Kermes", "org_unit_name": "…",
+  "region_name": "İç Anadolu", "province_name": "Ankara", "district_name": "Çankaya",
+  "created_by": 1, "created_by_name": "…", "created_at": "…", "updated_at": "…"
+}
+```
+- `GET /income-activities?activity_type_id=&org_unit_id=&region_id=&province_id=&district_id=&from=&to=&q=`
+  (`q` faaliyet adında arar)
+- `POST /income-activities` — zorunlu: `name`, `activity_type_id`, `activity_date`,
+  `income_amount` (≥ 0). `target_income`/`expense_amount` verilirse ≥ 0 olmalı.
+- `GET /income-activities/:id` · `PUT /income-activities/:id` ·
+  `DELETE /income-activities/:id` *(genel_merkez)*
+- Fotoğraf/doküman ekleri genel `/attachments` ucu üzerinden `entity=income_activities`
+  ile yüklenir (§9'daki genel ek sözleşmesiyle aynı).
+- Dashboard göstergeleri (`GET /dashboard/summary` → `activity.income`,
+  `top_income_types`, `top_income_provinces`, `top_income_org_units`;
+  `GET /dashboard/timeseries?metric=gelir_toplami` → aylık/yıllık gelir;
+  `GET /dashboard/provinces` / `GET /dashboard/by-region` → `income_total`)
+  bkz. SPEC-V2.md §3.4.
+
 ---
 
 ## 7. Lojistik (§3.3)

@@ -42,6 +42,7 @@ const ENTITIES = {
   shipments: 'shipments',
   field_activities: 'field_activities',
   documents: 'documents', // SPEC-V2-M6: kılavuz/form dosyaları
+  income_activities: 'income_activities', // SPEC-V2 §3.2E: gelir getirici faaliyetler
   // v2.3 — profil fotoğrafı. Diğerlerinden AYRI kurallara tabidir (bkz. src/avatars.js):
   // yalnız görsel türleri, 2 MB sınırı, kullanıcı başına tek dosya ve sahiplik kontrolü.
   [AVATAR_ENTITY]: 'users',

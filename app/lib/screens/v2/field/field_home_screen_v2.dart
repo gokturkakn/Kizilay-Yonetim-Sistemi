@@ -6,6 +6,7 @@ import '../../../theme/tokens.dart';
 import '../../../widgets/common.dart';
 import '../shared.dart';
 import 'event_list_screen.dart';
+import 'income_activity_list_screen.dart';
 import 'meeting_list_screen.dart';
 import 'task_list_screen.dart';
 import 'training_list_screen.dart';
@@ -58,6 +59,15 @@ class _FieldHomeScreenV2State extends State<FieldHomeScreenV2> {
           () => _open(const MeetingListScreen()),
         ));
       }
+      final incomeActivities = await api.incomeActivities(limit: 5);
+      for (final ia in incomeActivities.data) {
+        entries.add(_RecentEntry(
+          Icons.volunteer_activism_outlined,
+          ia.name,
+          ia.activityDate,
+          () => _open(const IncomeActivityListScreen()),
+        ));
+      }
     } catch (_) {
       // son kayıtlar çekilemezse bölüm gösterilmez
     }
@@ -106,6 +116,12 @@ class _FieldHomeScreenV2State extends State<FieldHomeScreenV2> {
                     subtitle: 'Kurul, komisyon ve saha toplantıları',
                     icon: Icons.meeting_room_outlined,
                     onTap: () => _open(const MeetingListScreen()),
+                  ),
+                  NavCard(
+                    title: 'Gelir Getirici Faaliyetler',
+                    subtitle: 'Kermes, bağış kampanyası ve kaynak geliştirme',
+                    icon: Icons.volunteer_activism_outlined,
+                    onTap: () => _open(const IncomeActivityListScreen()),
                   ),
                 ]),
                 // Boşsa bölüm hiç gösterilmez.

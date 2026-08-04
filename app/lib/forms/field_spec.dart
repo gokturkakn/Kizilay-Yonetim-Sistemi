@@ -165,6 +165,7 @@ class FieldSpec {
     this.parentKey,
     this.visibleWhen,
     this.requiredMessage,
+    this.invalidMessage,
     this.helper,
     this.hint,
     this.maxLength,
@@ -208,6 +209,12 @@ class FieldSpec {
 
   /// Boş bırakılırsa §4.7 kalıbı üretilir.
   final String? requiredMessage;
+
+  /// Biçim geçersizse gösterilecek mesaj (ör. `decimal` alanında sayı
+  /// çözümlenemezse). Verilmezse alan türünün varsayılan mesajı kullanılır
+  /// (`FieldType.decimal` için `S2.vSureBicim` — süre bağlamına özgüdür,
+  /// TL tutarı gibi başka ondalık alanlarda ezilmelidir).
+  final String? invalidMessage;
   final String? helper;
   final String? hint;
   final int? maxLength;
@@ -282,6 +289,7 @@ class FieldSpec {
         parentKey: parentKey,
         visibleWhen: visibleWhen,
         requiredMessage: requiredMessage,
+        invalidMessage: invalidMessage,
         helper: helper ?? this.helper,
         hint: hint,
         maxLength: maxLength,
@@ -314,6 +322,7 @@ class FormSection {
 
   // Modüle özgü ek başlıklar (§6'da adı geçenler).
   static const egitim = 'Eğitim Bilgileri';
+  static const gelir = 'Mali Bilgiler';
   static const gonderi = 'Gönderi Bilgileri';
   static const teslim = 'Teslim';
   static const katilim = 'Katılım';

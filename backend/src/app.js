@@ -19,6 +19,7 @@ import orgUnitRoutes from './routes/orgUnits.js';
 import taskRoutes from './routes/tasks.js';
 import trainingRoutes from './routes/trainings.js';
 import eventRoutes from './routes/events.js';
+import incomeActivityRoutes from './routes/incomeActivities.js';
 import logisticsRoutes from './routes/logistics.js';
 import attachmentRoutes from './routes/attachments.js';
 import calendarRoutes from './routes/calendar.js';
@@ -103,6 +104,7 @@ export function createApp(db) {
   secured.use(taskRoutes(db));
   secured.use(trainingRoutes(db));
   secured.use(eventRoutes(db));
+  secured.use(incomeActivityRoutes(db));
   secured.use(logisticsRoutes(db));
   secured.use(attachmentRoutes(db));
   secured.use(calendarRoutes(db));

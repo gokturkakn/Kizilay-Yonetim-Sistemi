@@ -352,6 +352,48 @@ class ApiV2 {
 
   Future<void> deleteMeeting(int id) => client.delete('/meetings/$id');
 
+  // ---- Gelir Getirici Faaliyetler (§6.5) ----
+
+  Future<Paged2<IncomeActivityRecord>> incomeActivities({
+    int? activityTypeId,
+    int? orgUnitId,
+    int? regionId,
+    int? provinceId,
+    int? districtId,
+    String? from,
+    String? to,
+    String? q,
+    int page = 1,
+    int limit = 50,
+  }) async {
+    final resp = await client.get('/income-activities',
+        query: _q({
+          'activity_type_id': activityTypeId,
+          'org_unit_id': orgUnitId,
+          'region_id': regionId,
+          'province_id': provinceId,
+          'district_id': districtId,
+          'from': from,
+          'to': to,
+          'q': q,
+          'page': page,
+          'limit': limit,
+        }));
+    final raw = PagedRaw.of(resp);
+    return Paged2(
+        data: raw.rows.map(IncomeActivityRecord.fromJson).toList(),
+        total: raw.total);
+  }
+
+  Future<int> createIncomeActivity(Map<String, dynamic> body) async =>
+      _idOf(await client.post('/income-activities', body));
+
+  Future<void> updateIncomeActivity(int id, Map<String, dynamic> body) =>
+      client.put('/income-activities/$id', body);
+
+  Future<void> deleteIncomeActivity(int id) =>
+      client.delete('/income-activities/$id');
+
   // ---- Lojistik (§7) ----
 
   Future<Paged2<MaterialRequest>> materialRequests({

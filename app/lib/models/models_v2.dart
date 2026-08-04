@@ -637,6 +637,95 @@ class MeetingV2 {
   bool get isOnline => (platform ?? '').isNotEmpty;
 }
 
+/// Gelir Getirici Faaliyetler — SPEC-V2 §3.2E / API-V2 §6.5.
+///
+/// Görev/Eğitim/Etkinlik/Toplantı'nın kardeşi ama AYRI bir modül: kendi mali sonucu
+/// (gelir/gider/net) olan tek faaliyet türü budur. `netIncome` sunucuda hesaplanır.
+class IncomeActivityRecord {
+  const IncomeActivityRecord({
+    required this.id,
+    required this.name,
+    required this.activityDate,
+    this.activityTypeId,
+    this.purpose,
+    this.regionId,
+    this.provinceId,
+    this.districtId,
+    this.orgUnitId,
+    this.location,
+    this.targetIncome,
+    this.incomeAmount = 0,
+    this.expenseAmount,
+    this.netIncome = 0,
+    this.participantCount = 0,
+    this.volunteerCount = 0,
+    this.supportingOrgs,
+    this.sponsors,
+    this.notes,
+    this.attachmentCount = 0,
+    this.activityTypeName,
+    this.orgUnitName,
+    this.regionName,
+    this.provinceName,
+    this.districtName,
+  });
+
+  factory IncomeActivityRecord.fromJson(Map<String, dynamic> j) =>
+      IncomeActivityRecord(
+        id: _int(j['id']),
+        name: j['name']?.toString() ?? '',
+        activityDate: j['activity_date']?.toString() ?? '',
+        activityTypeId: _intOrNull(j['activity_type_id']),
+        purpose: _str(j['purpose']),
+        regionId: _intOrNull(j['region_id']),
+        provinceId: _intOrNull(j['province_id']),
+        districtId: _intOrNull(j['district_id']),
+        orgUnitId: _intOrNull(j['org_unit_id']),
+        location: _str(j['location']),
+        targetIncome: _doubleOrNull(j['target_income']),
+        incomeAmount: _double(j['income_amount']),
+        expenseAmount: _doubleOrNull(j['expense_amount']),
+        netIncome: _double(j['net_income']),
+        participantCount: _int(j['participant_count']),
+        volunteerCount: _int(j['volunteer_count']),
+        supportingOrgs: _str(j['supporting_orgs']),
+        sponsors: _str(j['sponsors']),
+        notes: _str(j['notes']),
+        attachmentCount: _int(j['attachment_count']),
+        activityTypeName: _str(j['activity_type_name']),
+        orgUnitName: _str(j['org_unit_name']),
+        regionName: _str(j['region_name']),
+        provinceName: _str(j['province_name']),
+        districtName: _str(j['district_name']),
+      );
+
+  final int id;
+  final String name;
+  final String activityDate;
+  final int? activityTypeId;
+  final String? purpose;
+  final int? regionId;
+  final int? provinceId;
+  final int? districtId;
+  final int? orgUnitId;
+  final String? location;
+  final double? targetIncome;
+  final double incomeAmount;
+  final double? expenseAmount;
+  final double netIncome;
+  final int participantCount;
+  final int volunteerCount;
+  final String? supportingOrgs;
+  final String? sponsors;
+  final String? notes;
+  final int attachmentCount;
+  final String? activityTypeName;
+  final String? orgUnitName;
+  final String? regionName;
+  final String? provinceName;
+  final String? districtName;
+}
+
 // ---------------------------------------------------------------------------
 // Lojistik — API-V2 §7
 // ---------------------------------------------------------------------------

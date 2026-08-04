@@ -366,8 +366,8 @@ class FormController extends ChangeNotifier {
         }
       case FieldType.decimal:
         final n = parseDecimal(text);
-        if (n == null) return S2.vSureBicim;
-        if (n < 0) return S2.vSureBicim;
+        if (n == null) return spec.invalidMessage ?? S2.vSureBicim;
+        if (n < 0) return spec.invalidMessage ?? S2.vSureBicim;
       case FieldType.text:
       case FieldType.multiline:
         if (spec.minLength != null && text.length < spec.minLength!) {

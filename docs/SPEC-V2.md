@@ -110,6 +110,20 @@ Alanlar: Tür · Tarih · Yöntem · **Yüz yüze ise Toplantı Yeri / Çevrim i
 (dinamik alan)** · Düzenleyen Teşkilat · Katılımcılar · Gündem · Alınan Kararlar ·
 Tutanak · Sunum · Fotoğraf.
 
+**E. Gelir Getirici Faaliyetler** — Görev/Eğitim/Etkinlik/Toplantı'dan **AYRI bir
+modüldür**: gelir getirici bir faaliyet (kermes, bağış kampanyası, hayır yemeği ...)
+sahadaki diğer dördünden farklı olarak kendi planlaması, çıktısı ve **MALİ SONUCU**
+olan bir faaliyettir; Gelir Getirici Faaliyetler Komisyonu'nun performans takibi bu
+ayrı raporlanabilirliğe dayanır. 13 hazır faaliyet türü (Kermes, Sergi, Müzayede,
+Çay / Kahvaltı Programı, Hayır Yemeği, Konser, Kermes Standı, Satış Kampanyası,
+Bağış Kampanyası, Kurumsal Sponsorluk, Bireysel Bağış, Online Bağış Kampanyası, Diğer)
+— Yönetim Paneli → Tanımlar'dan genişletilir (kod değişikliği gerekmez).
+Alanlar: Faaliyet Adı · Faaliyet Türü · Amaç · Tarih · Bölge · İl · İlçe ·
+Düzenleyen Kadın Teşkilatı · Faaliyet Yeri · **Hedeflenen Gelir (isteğe bağlı)** ·
+**Gelir Tutarı (TL)** · **Gider Tutarı (TL, isteğe bağlı)** · **Net Gelir
+(otomatik hesaplanır — Gelir − Gider)** · Katılımcı Sayısı · Gönüllü Sayısı ·
+Destek Veren Kurum/Kuruluşlar · Sponsorlar · Açıklama · Fotoğraf · Doküman.
+
 ### 3.3 Lojistik
 `material_requests` (talep) → `shipments` (gönderi) → `stock_items` / `stock_movements`.
 Gönderi alanları: Talep Tarihi · Gönderi Tarihi · Gönderim Şekli (Kargo/Elden/Kurye) ·
@@ -122,6 +136,11 @@ broşür, afiş, masa örtüsü, kalem, defter, bez çanta, kupa, şapka, tişö
 teşkilatlanma, gönüllü/faaliyet/eğitim/etkinlik/toplantı sayıları, lojistik hareketleri.
 Tüm raporlar **Bölge · İl · İlçe · Tarih Aralığı · Faaliyet Türü** filtreleriyle.
 Çıktı: Excel (v1'de var) + **PDF** (yeni). Harita görünümü il bazlı yoğunluk.
+
+Gelir Getirici Faaliyetler için ayrıca: Toplam Gelir Getirici Faaliyet Sayısı ·
+Faaliyet Türlerine Göre Dağılım · İl Bazında Gelir · Bölge Bazında Gelir ·
+Aylık/Yıllık Gelir · En Çok Gelir Sağlayan Faaliyet Türleri · En Çok Gelir Sağlayan
+İl ve Teşkilatlar (bkz. API-V2.md §6.5).
 
 ### 3.5 Yönetim Paneli
 Kullanıcı Yönetimi (v1'de yoktu — denetim raporundaki Y-2 riskinin çözümü) ·

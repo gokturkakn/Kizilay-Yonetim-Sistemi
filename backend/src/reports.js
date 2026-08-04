@@ -279,6 +279,50 @@ export const REPORTS = {
     },
   },
 
+  'income-activities': {
+    title: 'Gelir Getirici Faaliyetler',
+    filename: 'gelir-getirici-faaliyetler',
+    columns: [
+      { header: 'Tarih', key: 'activity_date', width: 14 },
+      { header: 'Faaliyet Adı', key: 'name', width: 30 },
+      { header: 'Faaliyet Türü', key: 'activity_type_name', width: 24 },
+      { header: 'Bölge', key: 'region_name', width: 18 },
+      { header: 'İl', key: 'province_name', width: 16 },
+      { header: 'İlçe', key: 'district_name', width: 16 },
+      { header: 'Düzenleyen Teşkilat', key: 'org_unit_name', width: 30 },
+      { header: 'Hedeflenen Gelir', key: 'target_income', width: 16 },
+      { header: 'Gelir Tutarı (TL)', key: 'income_amount', width: 16 },
+      { header: 'Gider Tutarı (TL)', key: 'expense_amount', width: 16 },
+      { header: 'Net Gelir (TL)', key: 'net_income', width: 16 },
+      { header: 'Katılımcı Sayısı', key: 'participant_count', width: 14 },
+      { header: 'Gönüllü Sayısı', key: 'volunteer_count', width: 14 },
+      { header: 'Açıklama', key: 'notes', width: 40 },
+    ],
+    build(db, q) {
+      const where = [];
+      const params = [];
+      if (q.activity_type_id) {
+        where.push('x.activity_type_id = ?'); params.push(toIntOrThrow(q.activity_type_id, 'activity_type_id'));
+      }
+      const geo = geoFilters(q, {
+        region: 'x.region_id', province: 'x.province_id', district: 'x.district_id', date: 'x.activity_date',
+      });
+      where.push(...geo.where);
+      params.push(...geo.params);
+      return db.prepare(sql(`
+        SELECT x.*, (x.income_amount - COALESCE(x.expense_amount,0)) AS net_income,
+               li.name AS activity_type_name, ou.name AS org_unit_name,
+               rg.name AS region_name, pr.name AS province_name, d.name AS district_name
+        FROM income_activities x
+        JOIN lookup_items li ON li.id = x.activity_type_id
+        LEFT JOIN org_units ou ON ou.id = x.org_unit_id
+        LEFT JOIN regions rg ON rg.id = x.region_id
+        LEFT JOIN provinces pr ON pr.id = x.province_id
+        LEFT JOIN districts d ON d.id = x.district_id`, where, 'x.activity_date DESC'))
+        .all(...params);
+    },
+  },
+
   assignments: {
     title: 'Görev Atamaları',
     filename: 'gorev-atamalari',

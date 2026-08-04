@@ -1509,6 +1509,126 @@ try {
   check('birebir eşleşen listede scope_rank da dönüyor',
     exactDistrict.json.data[0].scope_rank === 1);
 
+  // ======================================================================
+  // v2.3 — Gelir Getirici Faaliyetler (SPEC-V2 §3.2E)
+  // ======================================================================
+  console.log('\n[27] v2.3 — gelir getirici faaliyetler');
+
+  const gelirTurleri = await req('GET', '/lookups/gelir_getirici_faaliyet_turu?limit=50', { token: admin });
+  check('gelir_getirici_faaliyet_turu 13 kalemle tohumlandı',
+    gelirTurleri.status === 200 && gelirTurleri.json.total === 13, `alınan: ${gelirTurleri.json?.total}`);
+  const kermes = gelirTurleri.json.data.find((i) => i.name === 'Kermes');
+
+  check('income_amount olmadan 400', (await req('POST', '/income-activities', {
+    token: admin, body: { name: 'x', activity_type_id: kermes.id, activity_date: '2026-03-15' },
+  })).status === 400);
+  check('name olmadan 400', (await req('POST', '/income-activities', {
+    token: admin,
+    body: { activity_type_id: kermes.id, activity_date: '2026-03-15', income_amount: 100 },
+  })).status === 400);
+  const badType = await req('POST', '/income-activities', {
+    token: admin,
+    body: { name: 'x', activity_type_id: 999999999, activity_date: '2026-03-15', income_amount: 100 },
+  });
+  check('bilinmeyen activity_type_id 400', badType.status === 400);
+  const wrongCategory = await req('POST', '/income-activities', {
+    token: admin,
+    body: {
+      name: 'x', activity_type_id: (await req('GET', '/lookups/gorev_turu?limit=1', { token: admin })).json.data[0].id,
+      activity_date: '2026-03-15', income_amount: 100,
+    },
+  });
+  check("başka kategoriden bir kalem activity_type_id olarak reddedilir (400)", wrongCategory.status === 400);
+  check('negatif income_amount reddedilir (400)', (await req('POST', '/income-activities', {
+    token: admin,
+    body: { name: 'x', activity_type_id: kermes.id, activity_date: '2026-03-15', income_amount: -5 },
+  })).status === 400);
+
+  const created = await req('POST', '/income-activities', {
+    token: admin,
+    body: {
+      name: '2026 Ramazan Kermesi', activity_type_id: kermes.id, purpose: 'Kaynak geliştirme',
+      activity_date: '2026-03-15', province_id: ankara.id, district_id: cankaya.id,
+      location: 'Çankaya Kültür Merkezi', target_income: 50000, income_amount: 62000,
+      expense_amount: 8000, participant_count: 300, volunteer_count: 25,
+      supporting_orgs: 'Çankaya Ticaret Odası', sponsors: 'ABC Gıda', notes: 'Başarılı geçti',
+    },
+  });
+  check('POST /income-activities 201', created.status === 201);
+  check('bölge ilden TÜRETİLDİ', created.json.region_id === ankara.region_id);
+  check('net_income = income - expense (54000)', created.json.net_income === 54000);
+  check('activity_type_name dolu', created.json.activity_type_name === 'Kermes');
+  const iaId = created.json.id;
+
+  const getOne = await req('GET', `/income-activities/${iaId}`, { token: admin });
+  check('GET /income-activities/:id 200', getOne.status === 200 && getOne.json.id === iaId);
+
+  const listByProvince = await req('GET', `/income-activities?province_id=${ankara.id}`, { token: admin });
+  check('GET /income-activities?province_id= filtresi', listByProvince.json.data.some((x) => x.id === iaId));
+  const listByQ = await req('GET', '/income-activities?q=Ramazan', { token: admin });
+  check('GET /income-activities?q= arama', listByQ.json.data.some((x) => x.id === iaId));
+
+  const iaUpdated = await req('PUT', `/income-activities/${iaId}`, {
+    token: admin, body: { income_amount: 70000, expense_amount: 10000 },
+  });
+  check('PUT /income-activities/:id kısmi güncelleme', iaUpdated.status === 200
+    && iaUpdated.json.income_amount === 70000 && iaUpdated.json.net_income === 60000
+    && iaUpdated.json.name === '2026 Ramazan Kermesi');
+
+  const iaAudits = await req('GET', '/audit-logs?limit=500', { token: admin });
+  check('audit: income_activities create kaydı',
+    iaAudits.json.data.some((a) => a.entity === 'income_activities' && a.entity_id === iaId && a.action === 'create'));
+  check('audit: income_activities update kaydı',
+    iaAudits.json.data.some((a) => a.entity === 'income_activities' && a.entity_id === iaId && a.action === 'update'));
+
+  // --- Ek (fotoğraf/doküman) --------------------------------------------
+  const iaAttach = await req('GET', `/attachments?entity=income_activities&entity_id=${iaId}`, { token: admin });
+  check('GET /attachments?entity=income_activities çalışıyor', iaAttach.status === 200 && iaAttach.json.total === 0);
+
+  // --- Tanım silme koruması (USAGE) --------------------------------------
+  const deleteInUse = await req('DELETE', `/lookup-items/${kermes.id}`, { token: admin });
+  check("kullanımdaki 'Kermes' tanımı silinemez (409 IN_USE)",
+    deleteInUse.status === 409 && deleteInUse.json.error?.code === 'IN_USE');
+
+  // --- Dashboard: özet, tür/il dağılımı, zaman serisi, bölge/il gelir toplamları ---
+  const iaDash = await req('GET', '/dashboard/summary', { token: admin });
+  check('dashboard özet: income bloğu dolu',
+    iaDash.json.activity.income.count >= 1 && iaDash.json.activity.income.total_income >= 70000);
+  check('dashboard özet: top_income_types dolu',
+    iaDash.json.top_income_types.some((t) => t.name === 'Kermes'));
+  check('dashboard özet: top_income_provinces dolu',
+    iaDash.json.top_income_provinces.some((p) => p.province_id === ankara.id));
+  const iaDashType = await req('GET', '/dashboard/summary?activity_type=gelir', { token: admin });
+  check('dashboard activity_type=gelir filtresi kabul ediliyor', iaDashType.status === 200);
+
+  const iaTs = await req('GET', '/dashboard/timeseries?metric=gelir_toplami&interval=month&from=2026-01-01&to=2026-12-31', { token: admin });
+  check('timeseries metric=gelir_toplami 200 ve Mart ayında tutar var',
+    iaTs.status === 200 && iaTs.json.data.find((p) => p.period === '2026-03')?.count >= 70000);
+
+  const iaProvinces = await req('GET', `/dashboard/provinces?province_id=${ankara.id}`, { token: admin });
+  check('dashboard/provinces income_total alanı dolu',
+    iaProvinces.json.data.find((p) => p.province_id === ankara.id)?.income_total >= 70000);
+
+  const iaByRegion = await req('GET', '/dashboard/by-region', { token: admin });
+  const ankaraRegionRow = iaByRegion.json.data.find((r) => r.region_id === ankara.region_id);
+  check('dashboard/by-region income_activities + income_total alanları dolu',
+    ankaraRegionRow.income_activities >= 1 && ankaraRegionRow.income_total >= 70000);
+
+  // --- saha kullanıcısı da oluşturup düzenleyebilir; yalnız admin silebilir ---
+  const iaSahaCreate = await req('POST', '/income-activities', {
+    token: saha, body: { name: 'Saha Kermesi', activity_type_id: kermes.id, activity_date: '2026-04-01', income_amount: 500 },
+  });
+  check('saha kullanıcısı da kayıt oluşturabilir (201)', iaSahaCreate.status === 201);
+  check('saha kullanıcısı silemez (403/401 değil 403 rol hatası)',
+    (await req('DELETE', `/income-activities/${iaSahaCreate.json.id}`, { token: saha })).status === 403);
+  check('admin silebilir (204)',
+    (await req('DELETE', `/income-activities/${iaSahaCreate.json.id}`, { token: admin })).status === 204);
+
+  // --- rapor dışa aktarım -------------------------------------------------
+  const iaExport = await req('GET', '/export/income-activities.xlsx', { token: admin, raw: true });
+  check('export/income-activities.xlsx 200 + doğru içerik türü',
+    iaExport.status === 200 && iaExport.headers.get('content-type')?.includes('spreadsheetml'));
+
   console.log('\n[8] Hata gövdesi biçimi');
   const nf = await req('GET', '/persons/999999', { token: admin });
   check('404 {error:{code,message}}', nf.status === 404 && typeof nf.json.error?.code === 'string' && typeof nf.json.error?.message === 'string');

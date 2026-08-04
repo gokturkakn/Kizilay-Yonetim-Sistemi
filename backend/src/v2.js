@@ -65,6 +65,22 @@ export function optionalHours(value, field) {
   return n;
 }
 
+/** Opsiyonel, negatif olmayan ondalık (TL tutarı gibi para alanları için). */
+export function optionalAmount(value, field) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw badRequest(`'${field}' 0 veya daha büyük bir sayı olmalı`);
+  return n;
+}
+
+/** Zorunlu, negatif olmayan ondalık (TL tutarı gibi para alanları için). */
+export function requiredAmount(value, field) {
+  if (value === undefined || value === null || value === '') {
+    throw badRequest(`'${field}' alanı zorunludur`);
+  }
+  return optionalAmount(value, field);
+}
+
 /**
  * il/ilçe tutarlılığını doğrular ve bölgeyi il üzerinden TÜRETİR.
  * İstemci `region_id` göndermek zorunda değildir — SPEC-V2'deki tüm formlar

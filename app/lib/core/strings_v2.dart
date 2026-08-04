@@ -156,6 +156,10 @@ class S2 {
   static const vEgitmen = 'Eğitmen adını girin.';
   static const vEtkinlikTuru = 'Etkinlik türü seçin.';
   static const vEtkinlikAdi = 'Etkinlik seçin.';
+  static const vGelirFaaliyetAdi = 'Faaliyet adını girin.';
+  static const vGelirFaaliyetTuru = 'Faaliyet türü seçin.';
+  static const vGelirTutari = 'Gelir tutarını girin.';
+  static const vTutarBicim = 'Geçerli bir tutar girin (örn. 62000 veya 62000,50).';
   static const vBolge = 'Bölge seçin.';
   static const vIl = 'İl seçin.';
   static const vKadinTeskilati = 'Kadın teşkilatı seçin.';
@@ -308,6 +312,7 @@ class S2 {
       'Etkinlik takvimi Yönetim Paneli → Tanımlar bölümünden yönetilir.';
   static const bosTakvimArama = 'Aramanızla eşleşen etkinlik bulunamadı.';
   static const bosToplanti = 'Henüz toplantı kaydı yok.';
+  static const bosGelir = 'Henüz gelir getirici faaliyet kaydı yok.';
   static const bosTalep = 'Henüz malzeme talebi yok.';
   static const bosGonderi = 'Henüz gönderi kaydı yok.';
   static const bosStok = 'Stok kaydı bulunmuyor.';
@@ -325,6 +330,7 @@ class S2 {
   static const basariEgitim = 'Eğitim kaydedildi.';
   static const basariEtkinlik = 'Etkinlik kaydedildi.';
   static const basariToplanti = 'Toplantı kaydedildi.';
+  static const basariGelir = 'Gelir getirici faaliyet kaydedildi.';
   static const basariGorevlendirme = 'Görevlendirme kaydedildi.';
   static const basariTalep = 'Talep kaydedildi.';
   static const basariGonderi = 'Gönderi kaydedildi.';

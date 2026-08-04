@@ -17,6 +17,9 @@ const ACTIVITY_TABLES = {
   egitim: { table: 'trainings', dateCol: 'training_date' },
   etkinlik: { table: 'events', dateCol: 'event_date' },
   toplanti: { table: 'meetings', dateCol: 'meeting_date' },
+  // SPEC-V2 §3.2E — Gelir Getirici Faaliyetler. Diğer dördü gibi tam coğrafya
+  // boyutu vardır; ayrıca `income_amount` üzerinden MALİ toplamlar da çıkar (aşağıda).
+  gelir: { table: 'income_activities', dateCol: 'activity_date' },
 };
 const ACTIVITY_TYPES = Object.keys(ACTIVITY_TABLES);
 
@@ -25,6 +28,7 @@ const METRICS = {
   egitim: { table: 'trainings', dateCol: 'training_date' },
   etkinlik: { table: 'events', dateCol: 'event_date' },
   toplanti: { table: 'meetings', dateCol: 'meeting_date' },
+  gelir: { table: 'income_activities', dateCol: 'activity_date' },
   // Toplam alanlar birden çok tabloya yayılır; dönem bazında toplanır.
   gonullu: {
     sources: [
@@ -37,6 +41,12 @@ const METRICS = {
     sources: [
       { table: 'tasks', dateCol: 'task_date', col: 'beneficiary_count' },
       { table: 'events', dateCol: 'event_date', col: 'beneficiary_count' },
+    ],
+  },
+  // "Aylık/Yıllık Gelir" — SPEC-V2 §3.2E dashboard göstergeleri.
+  gelir_toplami: {
+    sources: [
+      { table: 'income_activities', dateCol: 'activity_date', col: 'income_amount' },
     ],
   },
 };
@@ -156,6 +166,18 @@ export default function dashboardRoutes(db) {
         FROM meetings m${mw.sql}`).get(...mw.params)
         : { count: 0, participants: 0 };
 
+      // SPEC-V2 §3.2E — "Toplam Gelir Getirici Faaliyet Sayısı" + mali toplamlar.
+      const gw = activityWhere('x', 'activity_date', f);
+      const income = wanted('gelir') ? db.prepare(`
+        SELECT COUNT(*) AS count,
+          COALESCE(SUM(income_amount),0) AS total_income,
+          COALESCE(SUM(expense_amount),0) AS total_expense,
+          COALESCE(SUM(income_amount - COALESCE(expense_amount,0)),0) AS net_income,
+          COALESCE(SUM(participant_count),0) AS participants,
+          COALESCE(SUM(volunteer_count),0) AS volunteers
+        FROM income_activities x${gw.sql}`).get(...gw.params)
+        : { count: 0, total_income: 0, total_expense: 0, net_income: 0, participants: 0, volunteers: 0 };
+
       // v1 tablosu — geriye dönük görünürlük için özet içinde kalır.
       // (v1 `field_activities` bir görev kaydıdır; bu yüzden activity_type=gorev ile gelir.)
       const faWhere = [];
@@ -195,6 +217,26 @@ export default function dashboardRoutes(db) {
         FROM tasks t JOIN lookup_items li ON li.id = t.task_type_id${tw.sql}
         GROUP BY t.task_type_id ORDER BY count DESC, li.name LIMIT 10`).all(...tw.params) : [];
 
+      // --- SPEC-V2 §3.2E — "Faaliyet Türlerine Göre Dağılım" + "En Çok Gelir
+      // Sağlayan Faaliyet Türleri/İl ve Teşkilatlar" ------------------------
+      const incomeByType = wanted('gelir') ? db.prepare(`
+        SELECT x.activity_type_id, li.name, COUNT(*) AS count,
+          COALESCE(SUM(x.income_amount),0) AS total_income
+        FROM income_activities x JOIN lookup_items li ON li.id = x.activity_type_id${gw.sql}
+        GROUP BY x.activity_type_id ORDER BY total_income DESC, li.name LIMIT 10`).all(...gw.params) : [];
+
+      const topIncomeProvinces = wanted('gelir') ? db.prepare(`
+        SELECT x.province_id, pr.name AS province_name, COALESCE(SUM(x.income_amount),0) AS total_income
+        FROM income_activities x LEFT JOIN provinces pr ON pr.id = x.province_id
+        ${gw.sql ? `${gw.sql} AND` : 'WHERE'} x.province_id IS NOT NULL
+        GROUP BY x.province_id ORDER BY total_income DESC LIMIT 10`).all(...gw.params) : [];
+
+      const topIncomeOrgUnits = wanted('gelir') ? db.prepare(`
+        SELECT x.org_unit_id, ou.name AS org_unit_name, COALESCE(SUM(x.income_amount),0) AS total_income
+        FROM income_activities x LEFT JOIN org_units ou ON ou.id = x.org_unit_id
+        ${gw.sql ? `${gw.sql} AND` : 'WHERE'} x.org_unit_id IS NOT NULL
+        GROUP BY x.org_unit_id ORDER BY total_income DESC LIMIT 10`).all(...gw.params) : [];
+
       res.json({
         filters: f,
         organization: {
@@ -204,10 +246,13 @@ export default function dashboardRoutes(db) {
           by_region: byRegion,
         },
         activity: {
-          tasks, trainings, events, meetings, field_activities: fieldActivities,
+          tasks, trainings, events, meetings, income, field_activities: fieldActivities,
         },
         logistics: { requests, shipments, stock },
         top_task_types: topTaskTypes,
+        top_income_types: incomeByType,
+        top_income_provinces: topIncomeProvinces,
+        top_income_org_units: topIncomeOrgUnits,
       });
     } catch (e) { next(e); }
   });
@@ -345,6 +390,19 @@ export default function dashboardRoutes(db) {
         }
       }
 
+      // SPEC-V2 §3.2E — "İl Bazında Gelir". Sayaçtan AYRI: burada tutar toplanır.
+      const incomeByProvince = new Map();
+      if (wanted('gelir')) {
+        const w = activityWhere('x', 'activity_date', f);
+        for (const row of db.prepare(`
+          SELECT x.province_id, COALESCE(SUM(x.income_amount),0) AS total
+          FROM income_activities x${w.sql}
+          ${w.sql ? 'AND' : 'WHERE'} x.province_id IS NOT NULL
+          GROUP BY x.province_id`).all(...w.params)) {
+          incomeByProvince.set(row.province_id, row.total);
+        }
+      }
+
       const data = provinces.map((p) => {
         const org = orgByProvince.get(p.province_id) || { aktif: 0, pasif: 0, teskilat_yok: 0 };
         return {
@@ -358,6 +416,7 @@ export default function dashboardRoutes(db) {
           org_none: org.teskilat_yok,
           person_count: personByProvince.get(p.province_id) || 0,
           activity_count: activityByProvince.get(p.province_id) || 0,
+          income_total: incomeByProvince.get(p.province_id) || 0,
         };
       });
 
@@ -384,6 +443,19 @@ export default function dashboardRoutes(db) {
         }
       }
 
+      // SPEC-V2 §3.2E — "Bölge Bazında Gelir". Sayaçtan AYRI: burada tutar toplanır.
+      const incomeByRegion = new Map();
+      if (wanted('gelir')) {
+        const w = activityWhere('x', 'activity_date', f);
+        for (const row of db.prepare(`
+          SELECT x.region_id, COALESCE(SUM(x.income_amount),0) AS total
+          FROM income_activities x${w.sql}
+          ${w.sql ? 'AND' : 'WHERE'} x.region_id IS NOT NULL
+          GROUP BY x.region_id`).all(...w.params)) {
+          incomeByRegion.set(row.region_id, row.total);
+        }
+      }
+
       const data = db.prepare(`
         SELECT rg.id AS region_id, rg.name AS region_name,
           (SELECT COUNT(*) FROM org_units o WHERE o.region_id = rg.id AND o.status = 'aktif') AS org_units_aktif,
@@ -396,6 +468,8 @@ export default function dashboardRoutes(db) {
           trainings: counts.egitim.get(row.region_id) || 0,
           events: counts.etkinlik.get(row.region_id) || 0,
           meetings: counts.toplanti.get(row.region_id) || 0,
+          income_activities: counts.gelir.get(row.region_id) || 0,
+          income_total: incomeByRegion.get(row.region_id) || 0,
         }));
 
       res.json({ filters: f, data, total: data.length });

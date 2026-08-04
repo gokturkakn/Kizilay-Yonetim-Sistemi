@@ -59,10 +59,16 @@ class Formats {
   // ---- v2 eklemeleri — docs/UX-V2.md §4.4 ----
 
   static final NumberFormat _int = NumberFormat.decimalPattern('tr_TR');
+  static final NumberFormat _currency =
+      NumberFormat.currency(locale: 'tr_TR', symbol: '₺', decimalDigits: 2);
 
   /// Binlik ayraçlı tam sayı (`1.284`) — v2 ölçeği büyüktür.
   static String number(num? value) =>
       value == null ? '—' : _int.format(value);
+
+  /// TL tutarı (`62000` → `₺62.000,00`) — Gelir Getirici Faaliyetler §3.2E.
+  static String currency(num? value) =>
+      value == null ? '—' : _currency.format(value);
 
   /// Ondalık saat → Türkçe virgüllü gösterim (`2.5` → `2,5`).
   static String hours(num? value) {
