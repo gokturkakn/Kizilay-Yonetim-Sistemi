@@ -171,8 +171,12 @@ try {
     badSeed.code === 1 && /en az 8 karakter/.test(badSeed.out), badSeed.out.slice(0, 200));
 
   // ======================================================================
-  console.log('\n[3] Üretim benzeri ortam + KK_SEED_ADMIN_* → zorunlu şifre değişikliği');
+  console.log('\n[3] Üretim benzeri ortam + KK_SEED_ADMIN_* → hesap doğrudan kullanılabilir');
   // ======================================================================
+  // Not: zorunlu şifre değişikliği KAPISI (403 PASSWORD_CHANGE_REQUIRED) burada değil,
+  // smoke.mjs [21c]'de yönetici tarafından açılan hesap üzerinden test edilir — o
+  // mekanizma hâlâ mevcut ve varsayılan olarak çalışıyor. Bu blok yalnızca seed ile
+  // açılan İLK (ve tek) hesabın kendi kendini kilitlemediğini doğrular.
   const seededEnv = baseEnv({
     NODE_ENV: 'production',
     KK_JWT_SECRET: GOOD_SECRET,
@@ -193,34 +197,25 @@ try {
   });
   check('operatörün verdiği şifreyle giriş yapılıyor',
     firstLogin.status === 200 && !!firstLogin.json.token, JSON.stringify(firstLogin.json));
-  check('hesap must_change_password = 1 bayrağıyla geliyor',
-    firstLogin.json.user.must_change_password === 1);
+  check('hesap must_change_password = 0 ile gelir (seed hesabı kilitlenmez)',
+    firstLogin.json.user.must_change_password === 0);
   const opToken = firstLogin.json.token;
 
-  const blocked = await api(4215, 'GET', '/persons', { token: opToken });
-  check('şifre değiştirilmeden HİÇBİR uç kullanılamıyor (403 PASSWORD_CHANGE_REQUIRED)',
-    blocked.status === 403 && blocked.json.error.code === 'PASSWORD_CHANGE_REQUIRED',
-    JSON.stringify(blocked.json));
-  check('yönetici uçları da kapalı (GET /users 403)',
-    (await api(4215, 'GET', '/users', { token: opToken })).json.error?.code === 'PASSWORD_CHANGE_REQUIRED');
-  check('yazma uçları da kapalı (POST /documents 403)',
-    (await api(4215, 'POST', '/documents', { token: opToken, body: { title: 'X', category_id: 1 } }))
-      .json.error?.code === 'PASSWORD_CHANGE_REQUIRED');
-  check('GET /auth/me kapının DIŞINDA (istemci sebebi öğrenebilmeli)',
-    (await api(4215, 'GET', '/auth/me', { token: opToken })).status === 200);
+  check('hesap İLK GİRİŞTEN İTİBAREN doğrudan kullanılabiliyor (kapı yok)',
+    (await api(4215, 'GET', '/persons', { token: opToken })).status === 200);
+  check('yönetici uçları da açık (GET /users 200)',
+    (await api(4215, 'GET', '/users', { token: opToken })).status === 200);
 
+  // Operatör isterse şifreyi yine de kendi değiştirebilir — bu yol her zaman açık kalır.
   const changed = await api(4215, 'POST', '/auth/change-password', {
     token: opToken, body: { current_password: 'IlkSifre!2026', new_password: 'KalıcıYeni!2026' },
   });
-  check('şifre değiştirilebiliyor (200)', changed.status === 200 && changed.json.ok === true);
-  check('değişiklikten sonra uçlar açılıyor',
-    (await api(4215, 'GET', '/persons', { token: opToken })).status === 200);
+  check('şifre isteğe bağlı olarak değiştirilebiliyor (200)', changed.status === 200 && changed.json.ok === true);
   check('operatörün bildiği ilk şifre artık geçersiz (401)',
     (await api(4215, 'POST', '/auth/login', {
       body: { email: 'ilk.yonetici@kizilay.org.tr', password: 'IlkSifre!2026' },
     })).status === 401);
-  // Tohumlama her açılışta çalışır. Değiştirilmiş şifreyi EZMEMELİ ve bayrağı geri
-  // AÇMAMALI — aksi halde operatör her yeniden dağıtımda kilitli hesapla karşılaşırdı.
+  // Tohumlama her açılışta çalışır. Değiştirilmiş şifreyi EZMEMELİ.
   seededServer.proc.kill('SIGKILL');
   running.splice(running.indexOf(seededServer), 1);
   await sleep(500);
@@ -231,7 +226,7 @@ try {
   });
   check('yeniden başlatmadan sonra YENİ şifre hâlâ geçerli (tohumlama ezmiyor)',
     afterRestart.status === 200, JSON.stringify(afterRestart.json));
-  check('yeniden başlatma must_change_password bayrağını geri AÇMIYOR',
+  check('yeniden başlatmadan sonra da must_change_password = 0',
     afterRestart.json.user.must_change_password === 0, JSON.stringify(afterRestart.json.user));
   check('yeniden başlatmadan sonra ilk (operatör) şifresi hâlâ geçersiz',
     (await api(4215, 'POST', '/auth/login', {

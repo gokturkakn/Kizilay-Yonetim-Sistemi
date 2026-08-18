@@ -120,8 +120,8 @@ check('e-posta küçük harfe normalize edilir', (() => {
   const u = envSeed.db.prepare('SELECT email, name, role FROM users').get();
   return u.email === 'yonetici@kizilay.org.tr' && u.role === 'genel_merkez' && u.name === 'İlk Yönetici';
 })());
-check('hesap must_change_password = 1 ile açılır (ilk şifre kalıcı olamaz)',
-  envSeed.db.prepare('SELECT must_change_password AS m FROM users').get().m === 1);
+check('hesap must_change_password = 0 ile açılır (tek yönetici kendi kendini kilitlemez)',
+  envSeed.db.prepare('SELECT must_change_password AS m FROM users').get().m === 0);
 check('bilinen tohum hesapları AÇILMAZ',
   envSeed.db.prepare("SELECT COUNT(*) AS c FROM users WHERE email IN ('admin@kizilay.org.tr','saha@kizilay.org.tr')").get().c === 0);
 check('bu modda uyarı basılmaz', envSeed.log === '');

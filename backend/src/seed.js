@@ -39,8 +39,16 @@ const TASK_AREAS = [
  * Artık:
  *
  *  1. `env`  — `KK_SEED_ADMIN_EMAIL` + `KK_SEED_ADMIN_PASSWORD` verilmişse YALNIZ o
- *              genel merkez hesabı açılır. `must_change_password = 1` ile gelir:
- *              operatörün bildiği ilk şifre kalıcı olamaz.
+ *              genel merkez hesabı açılır. `must_change_password = 0` ile gelir:
+ *              hesap ilk girişten itibaren doğrudan kullanılabilir (operatör isterse
+ *              şifreyi `POST /auth/change-password` ile yine de kendi değiştirebilir —
+ *              bu uç her zaman açıktır, sadece zorunlu değildir). Zorunlu şifre
+ *              değişikliği KAPISI (`must_change_password` bayrağı ve 403
+ *              `PASSWORD_CHANGE_REQUIRED`) kod tabanında hâlâ mevcut ve yönetici
+ *              tarafından açılan/sıfırlanan hesaplarda varsayılan olarak çalışır
+ *              (bkz. `routes/users.js`); yalnızca seed ile açılan bu ilk hesap için
+ *              devre dışı bırakıldı — tek yönetici hesabının kendi kendini
+ *              kilitleyip açacak kimse bırakmaması için.
  *  2. `none` — Üretim benzeri ortamda bu değişkenler YOKSA hiçbir hesap açılmaz.
  *              Sunucu çalışır (sağlık ucu, göçler, referans veri) ama giriş yapılamaz;
  *              konsola nasıl ilk yönetici açılacağını anlatan Türkçe uyarı basılır.
@@ -86,7 +94,7 @@ export function resolveSeedUsers(env = process.env) {
         email,
         password,
         role: 'genel_merkez',
-        must_change_password: 1,
+        must_change_password: 0,
       }],
     };
   }
@@ -113,9 +121,9 @@ const NO_SEED_USER_WARNING = [
   '    KK_SEED_ADMIN_PASSWORD=<en az 8 karakter, harf + rakam> \\',
   '    npm start',
   '',
-  '  Hesap "şifre değişikliği zorunlu" bayrağıyla açılır: ilk girişten sonra',
-  '  POST /auth/change-password çağrılmadan başka hiçbir uç kullanılamaz.',
-  '  Hesap oluştuktan sonra değişkenleri ortamdan KALDIRIN.',
+  '  Hesap ilk girişten itibaren doğrudan kullanılabilir (zorunlu şifre',
+  '  değişikliği YOK); isterseniz POST /auth/change-password ile kendiniz',
+  '  değiştirebilirsiniz. Hesap oluştuktan sonra değişkenleri ortamdan KALDIRIN.',
   '───────────────────────────────────────────────────────────────────────',
   '',
 ].join('\n');
